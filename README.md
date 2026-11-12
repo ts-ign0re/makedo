@@ -94,7 +94,7 @@ limits: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ### Requirements
 
-- **System:** Linux x86_64 (glibc or musl) or macOS 11+ (Intel and Apple Silicon).
+- **System:** Linux x86_64 or arm64, or macOS 11+ (Intel and Apple Silicon).
 - **A model:** an API key (for example `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`,
   `OPENAI_API_KEY`), a ChatGPT subscription, or local Ollama.
 - **Git:** for the wiki, memory and worktrees; `makedo finish` needs 2.38 or newer.

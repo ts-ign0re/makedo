@@ -68,8 +68,8 @@ impl<R: AsyncRead + Unpin> AsyncRead for CappedReader<R> {
     }
 }
 
-/// Child в своей process group; на drop — SIGTERM группе (`kill` командой,
-/// без unsafe — паттерн bash-тула). stderr сервера — в /dev/null.
+/// Child в своей process group; на drop — SIGTERM группе (системным вызовом через
+/// rustix, без unsafe — как в bash-туле). stderr сервера — в /dev/null.
 // ponytail: stderr в лог-файл сервера — когда появится логирование; grace-KILL не нужен, child без state
 #[derive(Debug)]
 pub struct ChildGuard {
@@ -78,11 +78,14 @@ pub struct ChildGuard {
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        if let Some(pid) = self.child.id() {
-            let _ = std::process::Command::new("kill")
-                .args(["-TERM", &format!("-{pid}")])
-                .stderr(Stdio::null())
-                .status();
+        // не внешняя команда `kill`: на Linux она разбирает отрицательный pgid как флаг
+        if let Some(group) = self
+            .child
+            .id()
+            .and_then(|pid| i32::try_from(pid).ok())
+            .and_then(rustix::process::Pid::from_raw)
+        {
+            let _ = rustix::process::kill_process_group(group, rustix::process::Signal::TERM);
         }
         let _ = self.child.start_kill();
     }

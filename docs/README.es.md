@@ -98,7 +98,7 @@ sus límites están en [BENCHMARKS.md](BENCHMARKS.md) (en inglés).
 
 ### Requisitos
 
-- **Sistema:** Linux x86_64 (glibc o musl) o macOS 11+ (Intel y Apple Silicon).
+- **Sistema:** Linux x86_64 o arm64, o macOS 11+ (Intel y Apple Silicon).
 - **Un modelo:** una clave de API (por ejemplo `DEEPSEEK_API_KEY`,
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), la suscripción de ChatGPT u Ollama en local.
 - **Git:** para la wiki, la memoria y los worktrees; `makedo finish` necesita la

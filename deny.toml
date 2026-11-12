@@ -3,3 +3,9 @@ allow = ["GPL-3.0-or-later", "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exceptio
 
 [advisories]
 yanked = "deny"
+# Оба крейта приходят только с необязательной фичей `gui` (оконный прототип) через
+# ratatui-wgpu; поддерживаемой замены нет. В обычную сборку CLI они не попадают.
+ignore = [
+  { id = "RUSTSEC-2026-0206", reason = "rustybuzz is unmaintained; pulled only by the optional gui feature" },
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained; pulled only by the optional gui feature" },
+]

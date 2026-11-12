@@ -95,7 +95,7 @@ makedo — агент, который пишет и правит код в ва�
 
 ### Требования
 
-- **Система:** Linux x86_64 (glibc или musl) либо macOS 11+ (Intel и Apple Silicon).
+- **Система:** Linux x86_64 или arm64 либо macOS 11+ (Intel и Apple Silicon).
 - **Модель:** ключ API (например `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`,
   `OPENAI_API_KEY`), подписка ChatGPT или локальный Ollama.
 - **Git:** для wiki, памяти и worktree; для `makedo finish` — версии 2.38 и новее.

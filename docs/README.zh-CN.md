@@ -90,7 +90,7 @@ makedo 是一个在你的代码仓库里编写和修改代码的智能体。名�
 
 ### 环境要求
 
-- **系统：** Linux x86_64（glibc 或 musl），或 macOS 11+（Intel 与 Apple Silicon）。
+- **系统：** Linux x86_64 或 arm64，或 macOS 11+（Intel 与 Apple Silicon）。
 - **模型：** API 密钥（例如 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、
   `OPENAI_API_KEY`）、ChatGPT 订阅，或本地 Ollama。
 - **Git：** 用于 wiki、记忆和 worktree；`makedo finish` 需要 2.38 或更高版本。

@@ -61,6 +61,8 @@ ratatui = { version = "0.30", default-features = false, features = ["crossterm"]
 crossterm = { version = "0.29", default-features = false, features = ["events", "event-stream"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 ring = "0.17"
+# kill(2) по группе процессов без unsafe; уже в дереве через crossterm
+rustix = { version = "1", features = ["process"] }
 
 [package]
 name = "makedo"

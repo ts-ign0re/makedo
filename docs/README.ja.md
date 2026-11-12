@@ -95,7 +95,7 @@ makedo は、あなたのリポジトリでコードを書き、修正するエ�
 
 ### 必要なもの
 
-- **システム:** Linux x86_64（glibc または musl）、または macOS 11 以降（Intel と
+- **システム:** Linux x86_64 または arm64、あるいは macOS 11 以降（Intel と
   Apple Silicon）。
 - **モデル:** API キー（例: `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、
   `OPENAI_API_KEY`）、ChatGPT のサブスクリプション、またはローカルの Ollama。

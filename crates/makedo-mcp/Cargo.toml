@@ -12,6 +12,7 @@ thiserror = { workspace = true }
 makedo-config = { workspace = true }
 rmcp = { workspace = true }
 rustls = { workspace = true }
+rustix = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true }

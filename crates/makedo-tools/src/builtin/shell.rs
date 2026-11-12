@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -168,7 +169,7 @@ pub async fn run_command(
         }
         res = child.wait() => {
             let code = res.map_err(|e| ToolError::Failed(format!("wait failed: {e}; log={}", log.display())))?.code();
-            let background = pid != 0 && std::process::Command::new("kill").args(["-0", &format!("-{pid}")]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
+            let background = group(pid).is_some_and(|g| test_kill_process_group(g).is_ok());
             if background { terminate(pid, &mut child).await; CommandStatus::BackgroundStopped }
             else { CommandStatus::Exited(code) }
         },
@@ -233,22 +234,22 @@ impl Tool for BashTool {
     }
 }
 
+/// Группа процессов команды: её pgid равен pid лидера (spawn с `process_group(0)`).
+fn group(pid: u32) -> Option<Pid> {
+    i32::try_from(pid).ok().and_then(Pid::from_raw)
+}
+
 async fn terminate(pid: u32, child: &mut tokio::process::Child) {
-    if pid == 0 {
+    let Some(group) = group(pid) else {
         let _ = child.kill().await;
         return;
-    }
-    let signal = |sig: &str| {
-        let _ = std::process::Command::new("kill")
-            .args([sig, &format!("-{pid}")])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
     };
-    signal("-TERM");
+    // Системный вызов, а не внешняя команда `kill`: на Linux она разбирает отрицательный
+    // pgid как флаг — группа остаётся жить, а проверка `-0` врёт об успехе.
+    let _ = kill_process_group(group, Signal::TERM);
     // Reap the leader, but still kill remaining descendants after the grace period.
     let _ = tokio::time::timeout(KILL_GRACE, child.wait()).await;
-    signal("-KILL");
+    let _ = kill_process_group(group, Signal::KILL);
     let _ = child.wait().await;
 }
 

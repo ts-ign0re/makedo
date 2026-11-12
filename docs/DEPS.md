@@ -16,5 +16,6 @@
 | rmcp (client + 2 транспорта) | MCP | самописный клиент (протокол движется) | средний |
 | rustls (ring) | криптопровайдер для HTTP-клиента rmcp: без него MCP по https не работает | aws-lc-rs (тяжёлая C-сборка) | нулевой: уже в дереве через reqwest |
 | ratatui + crossterm | TUI | cursive (тяжелее) | средний |
+| rustix (process) | `kill(2)` по группе процессов без unsafe | внешняя команда `kill` (на Linux неверно разбирает отрицательный pgid), nix (нет в дереве) | нулевой: уже в дереве через crossterm |
 | ratatui-wgpu + winit (только фича `gui`) | оконный режим `makedo app` и `Makedo.app` | libghostty (эмулятор не нужен: TUI рисуем сами), egui_ratatui (тянет весь egui) | большой: +3.8 MB к бинарю (15.2 против 11.4), поэтому вне сборки по умолчанию |
 | Самописные: BM25, SSE-декодер, frontmatter/wikilinks-парсер, spinner-кадры (codegen) | — | tantivy, reqwest-eventsource, serde_yaml, nom | нулевой |
