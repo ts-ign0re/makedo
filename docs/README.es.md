@@ -57,12 +57,22 @@ existen. makedo cierra esa brecha con tres cosas:
 | Qué | Cuánto |
 |---|---|
 | Una funcionalidad con pruebas y autoverificación | **$0.13** con deepseek-v4-pro y la wiki ya preparada, frente a $3.5–5.2 con sonnet con una calidad comparable |
-| Lo que ahorra la wiki | entre un 17 y un 57 % del coste total de una ejecución |
+| Con la wiki | las ejecuciones más rápidas y estables (5,8 y 6,0 min frente a 8–24 min) y diffs compactos |
 | Rellenar la wiki | unos $0.15 para un monorepo de 350 mil líneas |
 | Presupuestos (controles en CI) | arranque < 150 ms, memoria en reposo < 50 MB, binario < 15 MB |
 
-Son mediciones propias del proyecto sobre 22 ejecuciones de benchmark, analizadas
-en [CORE.md](CORE.md) (en ruso).
+Una tarea de un backlog real, cinco configuraciones, la misma aceptación en tres etapas:
+
+| Configuración | Aceptada | Tiempo | Coste |
+|---|---|---|---|
+| makedo + deepseek-v4-flash + wiki | ✓ | 3.1 min | **$0.014** |
+| makedo + deepseek-v4-pro + wiki | ✓ | 5.9 min | $0.036 |
+| makedo + qwen3.8 27b local + wiki | ✓ | 14.9 min | **$0** |
+| `claude -p`, sonnet 5, sin wiki | ✓ | 4.9 min | $2.19 |
+| `claude -p`, opus 5, sin wiki | ✓ | 4.7 min | $2.56 |
+
+Son mediciones propias del proyecto con muestras pequeñas. Las tablas completas y
+sus límites están en [BENCHMARKS.md](BENCHMARKS.md) (en inglés).
 
 ## Características
 

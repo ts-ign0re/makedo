@@ -56,12 +56,22 @@ closes that gap with three things:
 | What | How much |
 |---|---|
 | A feature with tests and self-checking | **$0.13** on deepseek-v4-pro with a warmed-up wiki, versus $3.5–5.2 on sonnet at comparable quality |
-| What the wiki saves | 17–57% off the full cost of a run |
+| With the wiki | the fastest and most stable runs (5.8 and 6.0 min against 8–24 min) and compact diffs |
 | Filling the wiki | about $0.15 for a 350k-line monorepo |
 | Budgets (CI gates) | startup < 150 ms, idle memory < 50 MB, binary < 15 MB |
 
-These are the project's own measurements over 22 benchmark runs, analysed in
-[docs/CORE.md](docs/CORE.md) (in Russian).
+One task from a real backlog, five setups, the same three-stage acceptance:
+
+| Setup | Accepted | Time | Cost |
+|---|---|---|---|
+| makedo + deepseek-v4-flash + wiki | ✓ | 3.1 min | **$0.014** |
+| makedo + deepseek-v4-pro + wiki | ✓ | 5.9 min | $0.036 |
+| makedo + local qwen3.8 27b + wiki | ✓ | 14.9 min | **$0** |
+| `claude -p`, sonnet 5, no wiki | ✓ | 4.9 min | $2.19 |
+| `claude -p`, opus 5, no wiki | ✓ | 4.7 min | $2.56 |
+
+These are the project's own measurements on small samples. Full tables and their
+limits: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Features
 
