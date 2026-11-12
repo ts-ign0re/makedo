@@ -159,7 +159,11 @@ fn log_grows_bottom_up() {
 fn welcome_shows_logo_and_hints() {
     let app = App::default();
     let screen = render(&app, 120, 40);
-    assert!(screen.contains("makedo 0.1.0"), "нет версии в welcome");
+    // версия из манифеста: зашитый номер ломал тест при каждом выпуске
+    assert!(
+        screen.contains(concat!("makedo ", env!("CARGO_PKG_VERSION"))),
+        "нет версии в welcome"
+    );
     assert!(
         screen.contains("make do — type to begin"),
         "нет подписи welcome"

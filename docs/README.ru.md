@@ -124,19 +124,21 @@ cargo install --path . --locked --profile dist
 ### Приложение для macOS
 
 ```sh
-scripts/bundle-macos.sh        # собирает target/Makedo.app
-cp -R target/Makedo.app /Applications/
+curl -fsSL https://raw.githubusercontent.com/ts-ign0re/makedo/main/install.sh | sh -s -- --app
 ```
 
-Для сборки нужны Xcode Command Line Tools. Приложение при запуске спрашивает папку
-проекта; `open -a Makedo --args ~/proj` открывает её сразу. Текст рисует системный
-Menlo; значки, которых в нём нет (брайль спиннеров, ветка в шапке), берутся из
-JuliaMono (OFL) — он скачивается при сборке. Шрифт текста меняется переменной
-`MAKEDO_FONT` (путь к файлу), кегль — `MAKEDO_FONT_SIZE` (пункты, по умолчанию 14).
+Команда ставит и CLI, и `Makedo.app` — в `/Applications`, а если туда нет прав на
+запись, то в `~/Applications`. Приложение при запуске спрашивает папку проекта;
+`open -a Makedo --args ~/proj` открывает её сразу.
 
-Это прототип: подпись ad-hoc (на чужом Mac потребуется разрешить запуск вручную),
-нет выделения текста мышью, emoji и сборок под Linux и Windows. Без бандла окно
-запускается так: `MAKEDO_SYMBOLS_FONT=target/fonts/JuliaMono-Regular.ttf cargo run --features gui -- app`.
+Текст рисует системный Menlo; значки, которых в нём нет (брайль спиннеров, ветка в
+шапке), берутся из JuliaMono (OFL) — он лежит внутри приложения. Шрифт текста
+меняется переменной `MAKEDO_FONT` (путь к файлу), кегль — `MAKEDO_FONT_SIZE`
+(пункты, по умолчанию 14).
+
+Это прототип: нет выделения текста мышью, emoji и сборок под Linux и Windows.
+Собрать приложение из исходников — `scripts/bundle-macos.sh` (нужны Xcode Command
+Line Tools); результат — `target/Makedo.app`.
 
 ## Быстрый старт
 

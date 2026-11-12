@@ -47,9 +47,37 @@ jobs:
           name: makedo-${{ matrix.target }}
           path: target/${{ matrix.target }}/dist/makedo-*.tar.gz*
 
+  # приложение для macOS: тот же TUI в собственном окне, ставится `install.sh --app`
+  app:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain (version pinned in rust-toolchain.toml)
+        run: rustup toolchain install && rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: app-${{ matrix.target }}
+      - name: bundle
+        run: scripts/bundle-macos.sh ${{ matrix.target }}
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+      - name: package
+        run: |
+          cd target
+          COPYFILE_DISABLE=1 tar czf Makedo-${{ matrix.target }}.app.tar.gz Makedo.app
+          shasum -a 256 Makedo-${{ matrix.target }}.app.tar.gz > Makedo-${{ matrix.target }}.app.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Makedo-app-${{ matrix.target }}
+          path: target/Makedo-*.app.tar.gz*
+
   publish:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [build, app]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -74,5 +102,7 @@ jobs:
         with:
           name: makedo ${{ github.ref_name }}
           body_path: body.md
-          files: makedo-*.tar.gz*
+          files: |
+            makedo-*.tar.gz*
+            Makedo-*.app.tar.gz*
           generate_release_notes: true

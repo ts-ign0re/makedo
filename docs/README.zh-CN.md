@@ -119,19 +119,20 @@ cargo install --path . --locked --profile dist
 ### macOS 应用
 
 ```sh
-scripts/bundle-macos.sh        # 构建 target/Makedo.app
-cp -R target/Makedo.app /Applications/
+curl -fsSL https://raw.githubusercontent.com/ts-ign0re/makedo/main/install.sh | sh -s -- --app
 ```
 
-构建需要 Xcode Command Line Tools。应用启动时会询问项目文件夹；
-`open -a Makedo --args ~/proj` 可直接打开指定文件夹。文字使用系统自带的 Menlo
-字体绘制；Menlo 缺少的字形（盲文加载动画、标题栏里的分支图标）来自 JuliaMono
-（OFL），它在构建时下载。文字字体可通过 `MAKEDO_FONT`（文件路径）更换，字号通过
+这条命令会同时安装 CLI，并把 `Makedo.app` 放到 `/Applications`；如果该目录不可写，
+则放到 `~/Applications`。应用启动时会询问项目文件夹；
+`open -a Makedo --args ~/proj` 可直接打开指定文件夹。
+
+文字使用系统自带的 Menlo 字体绘制；Menlo 缺少的字形（盲文加载动画、标题栏里的分支图标）
+来自随应用附带的 JuliaMono（OFL）。文字字体可通过 `MAKEDO_FONT`（文件路径）更换，字号通过
 `MAKEDO_FONT_SIZE`（磅，默认 14）调整。
 
-这还是原型：使用 ad-hoc 签名（在别的 Mac 上需要手动允许运行），不支持用鼠标选择
-文字，不支持 emoji，也没有 Linux 和 Windows 版本。不打包时可以这样启动窗口：
-`MAKEDO_SYMBOLS_FONT=target/fonts/JuliaMono-Regular.ttf cargo run --features gui -- app`。
+这还是原型：不支持用鼠标选择文字，不支持 emoji，也没有 Linux 和 Windows 版本。
+如需从源码构建应用，运行 `scripts/bundle-macos.sh`（需要 Xcode Command Line
+Tools），产物为 `target/Makedo.app`。
 
 ## 快速开始
 

@@ -128,22 +128,23 @@ cargo install --path . --locked --profile dist
 ### Aplicación para macOS
 
 ```sh
-scripts/bundle-macos.sh        # compila target/Makedo.app
-cp -R target/Makedo.app /Applications/
+curl -fsSL https://raw.githubusercontent.com/ts-ign0re/makedo/main/install.sh | sh -s -- --app
 ```
 
-Para compilarla hacen falta las Xcode Command Line Tools. Al abrirse, la
-aplicación pregunta por la carpeta del proyecto; `open -a Makedo --args ~/proj` la
-abre directamente. El texto se dibuja con la fuente Menlo del sistema; los glifos
-que le faltan (los spinners en braille, el icono de rama de la cabecera) salen de
-JuliaMono (OFL), que se descarga durante la compilación. La fuente del texto se
-cambia con `MAKEDO_FONT` (ruta a un archivo) y su tamaño con `MAKEDO_FONT_SIZE`
-(en puntos, 14 por defecto).
+El comando instala también la CLI y deja `Makedo.app` en `/Applications`, o en
+`~/Applications` si esa carpeta no admite escritura. Al abrirse, la aplicación
+pregunta por la carpeta del proyecto; `open -a Makedo --args ~/proj` la abre
+directamente.
 
-Es un prototipo: la firma es ad hoc (en otro Mac habrá que permitir su ejecución a
-mano) y no hay selección de texto con el ratón, ni emoji, ni compilaciones para
-Linux o Windows. Sin el bundle, la ventana se lanza con
-`MAKEDO_SYMBOLS_FONT=target/fonts/JuliaMono-Regular.ttf cargo run --features gui -- app`.
+El texto se dibuja con la fuente Menlo del sistema; los glifos que le faltan (los
+spinners en braille, el icono de rama de la cabecera) salen de JuliaMono (OFL),
+incluida en la aplicación. La fuente del texto se cambia con `MAKEDO_FONT` (ruta a
+un archivo) y su tamaño con `MAKEDO_FONT_SIZE` (en puntos, 14 por defecto).
+
+Es un prototipo: no hay selección de texto con el ratón, ni emoji, ni versiones
+para Linux o Windows. Para compilar la aplicación desde el código fuente, ejecuta
+`scripts/bundle-macos.sh` (requiere las Xcode Command Line Tools); el resultado es
+`target/Makedo.app`.
 
 ## Inicio rápido
 

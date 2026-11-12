@@ -123,21 +123,21 @@ cargo install --path . --locked --profile dist
 ### macOS app
 
 ```sh
-scripts/bundle-macos.sh        # builds target/Makedo.app
-cp -R target/Makedo.app /Applications/
+curl -fsSL https://raw.githubusercontent.com/ts-ign0re/makedo/main/install.sh | sh -s -- --app
 ```
 
-Building requires the Xcode Command Line Tools. On launch the app asks for a
-project folder; `open -a Makedo --args ~/proj` opens one directly. Text is drawn
-with the system Menlo font; glyphs it lacks (braille spinners, the branch icon in
-the header) come from JuliaMono (OFL), which is downloaded at build time. Change
-the text font with `MAKEDO_FONT` (a file path) and its size with
+This installs the CLI as well and puts `Makedo.app` in `/Applications`, or in
+`~/Applications` if that folder is not writable. On launch the app asks for a
+project folder; `open -a Makedo --args ~/proj` opens one directly.
+
+Text is drawn with the system Menlo font; glyphs it lacks (braille spinners, the
+branch icon in the header) come from JuliaMono (OFL), which ships inside the app.
+Change the text font with `MAKEDO_FONT` (a file path) and its size with
 `MAKEDO_FONT_SIZE` (points, 14 by default).
 
-This is a prototype: it is ad-hoc signed (on another Mac you will have to allow it
-manually), and there is no mouse text selection, no emoji, and no Linux or Windows
-build. Without the bundle, run the window with
-`MAKEDO_SYMBOLS_FONT=target/fonts/JuliaMono-Regular.ttf cargo run --features gui -- app`.
+This is a prototype: there is no mouse text selection, no emoji, and no Linux or
+Windows build. To build the app from source, run `scripts/bundle-macos.sh` (needs
+the Xcode Command Line Tools); it produces `target/Makedo.app`.
 
 ## Quick start
 

@@ -126,21 +126,21 @@ cargo install --path . --locked --profile dist
 ### macOS アプリ
 
 ```sh
-scripts/bundle-macos.sh        # target/Makedo.app をビルド
-cp -R target/Makedo.app /Applications/
+curl -fsSL https://raw.githubusercontent.com/ts-ign0re/makedo/main/install.sh | sh -s -- --app
 ```
 
-ビルドには Xcode Command Line Tools が必要です。アプリは起動時にプロジェクトの
-フォルダを尋ねます。`open -a Makedo --args ~/proj` とすれば直接開けます。テキストは
-システムの Menlo フォントで描画し、Menlo にないグリフ（点字のスピナー、ヘッダーの
-ブランチアイコン）は JuliaMono（OFL）から取ります。JuliaMono はビルド時にダウンロード
-されます。テキストのフォントは `MAKEDO_FONT`（ファイルのパス）で、サイズは
-`MAKEDO_FONT_SIZE`（ポイント、既定は 14）で変更できます。
+このコマンドは CLI もあわせてインストールし、`Makedo.app` を `/Applications` に置きます。
+そのフォルダに書き込めない場合は `~/Applications` に置きます。アプリは起動時に
+プロジェクトのフォルダを尋ねます。`open -a Makedo --args ~/proj` とすれば直接開けます。
 
-これはプロトタイプです。署名は ad-hoc で（ほかの Mac では手動で実行を許可する必要が
-あります）、マウスによるテキスト選択、絵文字、Linux 版と Windows 版はありません。
-バンドルなしでウィンドウを起動するには次のようにします:
-`MAKEDO_SYMBOLS_FONT=target/fonts/JuliaMono-Regular.ttf cargo run --features gui -- app`
+テキストはシステムの Menlo フォントで描画し、Menlo にないグリフ（点字のスピナー、
+ヘッダーのブランチアイコン）はアプリに同梱の JuliaMono（OFL）から取ります。テキストの
+フォントは `MAKEDO_FONT`（ファイルのパス）で、サイズは `MAKEDO_FONT_SIZE`（ポイント、
+既定は 14）で変更できます。
+
+これはプロトタイプです。マウスによるテキスト選択、絵文字、Linux 版と Windows 版は
+ありません。ソースからアプリをビルドするには `scripts/bundle-macos.sh` を実行します
+（Xcode Command Line Tools が必要）。成果物は `target/Makedo.app` です。
 
 ## クイックスタート
 

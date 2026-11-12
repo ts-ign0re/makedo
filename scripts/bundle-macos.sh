@@ -1,6 +1,6 @@
 #!/bin/sh
 # Собирает target/Makedo.app: оконный makedo (`--features gui`) с иконкой из assets/icon.svg.
-# usage: scripts/bundle-macos.sh
+# usage: scripts/bundle-macos.sh [target-triple]   (без аргумента — под текущую машину)
 # ponytail: ad-hoc подпись, без нотаризации и .dmg — добавить, когда бандл пойдёт наружу.
 set -eu
 cd "$(dirname "$0")/.."
@@ -8,11 +8,19 @@ APP=target/Makedo.app
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-cargo build --profile dist --features gui
+# в релизе Intel-версию собираем кросс-компиляцией: Intel-раннеров macOS у GitHub нет
+TARGET=${1:-}
+if [ -n "$TARGET" ]; then
+  cargo build --locked --profile dist --features gui --target "$TARGET"
+  BIN="target/$TARGET/dist/makedo"
+else
+  cargo build --profile dist --features gui
+  BIN=target/dist/makedo
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp target/dist/makedo "$APP/Contents/MacOS/makedo"
+cp "$BIN" "$APP/Contents/MacOS/makedo"
 
 # иконка: SVG → PNG 1024 с прозрачностью и полями macOS (AppKit читает SVG сам) → .icns
 cat > "$TMP/svg2png.swift" <<'EOF'
@@ -49,7 +57,8 @@ fi
 echo "$FONT_SHA  $FONT" | shasum -a 256 -c - >/dev/null || { echo "font checksum mismatch: $FONT" >&2; exit 1; }
 cp "$FONT" target/fonts/JuliaMono-LICENSE.txt "$APP/Contents/Resources/"
 
-VERSION=$(target/dist/makedo --version | cut -d' ' -f2)
+# из манифеста, а не из бинаря: кросс-собранный бинарь на сборочной машине не запустить
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
