@@ -5,10 +5,7 @@
 curl -fsSL https://raw.githubusercontent.com/ts-ign0re/makedo/main/install.sh | sh
 ```
 
-The script picks the archive for your platform, verifies its SHA-256 checksum and
-puts `makedo` in `~/.local/bin`. Set `MAKEDO_INSTALL_DIR` to use another
-directory. Then run `makedo` in a project folder; on the first run it asks you to
-pick a provider and a model.
+The script picks the archive for your platform, verifies its SHA-256 checksum and puts `makedo` in `~/.local/bin`. Set `MAKEDO_INSTALL_DIR` to use another directory. Then run `makedo` in a project folder; on the first run it asks you to pick a provider and a model.
 
 To install exactly this version rather than the latest one:
 
@@ -27,12 +24,9 @@ curl -fsSL https://raw.githubusercontent.com/ts-ign0re/makedo/main/install.sh \
 | macOS, Apple Silicon | `makedo-aarch64-apple-darwin.tar.gz` |
 | macOS, Intel | `makedo-x86_64-apple-darwin.tar.gz` |
 
-Every archive has a `.sha256` file next to it. To check one by hand, download
-both and run `shasum -a 256 -c makedo-<platform>.tar.gz.sha256`.
+Every archive has a `.sha256` file next to it. To check one by hand, download both and run `shasum -a 256 -c makedo-<platform>.tar.gz.sha256`.
 
-The macOS binaries are ad-hoc signed. If you download one through a browser, macOS
-quarantines it; clear the flag with `xattr -d com.apple.quarantine makedo`. The
-install script does not need this.
+The macOS binaries are ad-hoc signed. If you download one through a browser, macOS quarantines it; clear the flag with `xattr -d com.apple.quarantine makedo`. The install script does not need this.
 
 Windows is not supported.
 
