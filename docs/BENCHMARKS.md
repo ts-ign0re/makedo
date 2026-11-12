@@ -1,8 +1,39 @@
 # Benchmarks
 
-The project's own measurements. The target repositories are private, so the task
-code, patches and transcripts are not published — only the numbers. Sample sizes
-are small throughout: read these as directions, not statistics.
+The project's own measurements. The first section uses a public task and can be
+rerun by anyone. The numbered sections were measured on private repositories, so
+their task code, patches and transcripts are not published — only the numbers.
+Sample sizes are small throughout: read these as directions, not statistics.
+
+## A public task anyone can rerun
+
+One task from SWE-bench Lite, `pallets__flask-4992`: add a file mode parameter to
+`flask.Config.from_file()`. makedo 0.1.1 on DeepSeek, three runs per cell, scored
+by the benchmark's own tests. The script, every run and the full list of limits
+are in [bench/swe-bench-lite](../bench/swe-bench-lite).
+
+| Model | Variant | Resolved | Cost per run | Time per run |
+|---|---|---|---|---|
+| deepseek-v4-flash | no wiki | 3 of 3 | $0.0058–0.0070 | 28–52 s |
+| deepseek-v4-flash | wiki | 3 of 3 | $0.0067–0.0079 | 50–61 s |
+| deepseek-v4-pro | no wiki | 3 of 3 | $0.0266–0.0603 | 66–201 s |
+| deepseek-v4-pro | wiki | 1 of 3 | $0.0119–0.0485 | 19–139 s |
+
+Filling the wiki once cost $0.0235 (19 pages, 172 s).
+
+What it shows:
+
+- The cheap model solved the task every time, for under a cent and in under a
+  minute.
+- The wiki did not help on this task: on flash it added tokens, time and a little
+  cost for the same result, and on pro two of the three wiki runs failed. The
+  task changes one function in a package of about 8k lines, so there is little
+  for a knowledge layer to save.
+
+Limits: three runs per cell. Both failed runs named the new parameter `mode`, as
+the issue text suggests, while the hidden test uses Flask's final name, `text` —
+so the task partly measures recall of the real API. SWE-bench tasks may be in the
+models' training data.
 
 ## 1. One feature, one model, four setups
 

@@ -1,0 +1,9 @@
+{
+  "model": "deepseek-v4-flash",
+  "wiki_files": 19,
+  "seconds": 172,
+  "in": 1744662,
+  "out": 24979,
+  "cache_read": 1660288,
+  "cost": 0.0235
+}

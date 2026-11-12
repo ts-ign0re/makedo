@@ -57,7 +57,8 @@ closes that gap with three things:
 | What | How much |
 |---|---|
 | A feature with tests and self-checking | **$0.13** on deepseek-v4-pro with a warmed-up wiki, versus $3.5–5.2 on sonnet at comparable quality |
-| With the wiki | the fastest and most stable runs (5.8 and 6.0 min against 8–24 min) and compact diffs |
+| A public SWE-bench Lite task | solved 6 times out of 6 on deepseek-v4-flash, for under a cent and under a minute per run ([rerun it](bench/swe-bench-lite)) |
+| The wiki | on a private 350k-line monorepo: the fastest and most stable runs (5.8 and 6.0 min against 8–24 min); on the small public task it made no measurable difference |
 | Filling the wiki | about $0.15 for a 350k-line monorepo |
 | Budgets (CI gates) | startup < 150 ms, idle memory < 50 MB, binary < 15 MB |
 

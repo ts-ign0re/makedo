@@ -58,7 +58,8 @@ existen. makedo cierra esa brecha con tres cosas:
 | Qué | Cuánto |
 |---|---|
 | Una funcionalidad con pruebas y autoverificación | **$0.13** con deepseek-v4-pro y la wiki ya preparada, frente a $3.5–5.2 con sonnet con una calidad comparable |
-| Con la wiki | las ejecuciones más rápidas y estables (5,8 y 6,0 min frente a 8–24 min) y diffs compactos |
+| Una tarea pública de SWE-bench Lite | resuelta 6 veces de 6 con deepseek-v4-flash, por menos de un céntimo y en menos de un minuto por ejecución ([repetirla](../bench/swe-bench-lite)) |
+| La wiki | en un monorepo privado de 350 mil líneas: las ejecuciones más rápidas y estables (5,8 y 6,0 min frente a 8–24 min); en la tarea pública, pequeña, no hubo diferencia medible |
 | Rellenar la wiki | unos $0.15 para un monorepo de 350 mil líneas |
 | Presupuestos (controles en CI) | arranque < 150 ms, memoria en reposo < 50 MB, binario < 15 MB |
 
