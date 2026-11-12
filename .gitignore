@@ -1,0 +1,4 @@
+/target
+.claude/
+.makedo/synthetic/
+benchmarks/

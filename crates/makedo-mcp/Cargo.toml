@@ -1,0 +1,26 @@
+[package]
+name = "makedo-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+makedo-types = { workspace = true }
+makedo-tools = { workspace = true }
+thiserror = { workspace = true }
+makedo-config = { workspace = true }
+rmcp = { workspace = true }
+rustls = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+
+[dev-dependencies]
+makedo-config = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "time", "io-util"] }
+
+[lints]
+workspace = true

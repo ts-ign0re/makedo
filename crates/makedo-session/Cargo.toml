@@ -1,0 +1,28 @@
+[package]
+name = "makedo-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+makedo-types = { workspace = true }
+makedo-tools = { workspace = true }
+makedo-providers = { workspace = true }
+schemars = { workspace = true }
+makedo-wiki = { workspace = true }
+makedo-skills = { workspace = true }
+makedo-config = { workspace = true }
+makedo-memory = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+globset = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+
+[lints]
+workspace = true

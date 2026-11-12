@@ -1,0 +1,56 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: build
+        run: cargo build --profile dist --target ${{ matrix.target }}
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+      - name: codesign (macOS ad-hoc, so copied binary is not SIGKILLed)
+        if: contains(matrix.target, 'apple-darwin')
+        run: codesign -s - -f target/${{ matrix.target }}/dist/makedo
+      - name: package
+        run: |
+          cd target/${{ matrix.target }}/dist
+          tar czf makedo-${{ matrix.target }}.tar.gz makedo
+          shasum -a 256 makedo-${{ matrix.target }}.tar.gz > makedo-${{ matrix.target }}.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: makedo-${{ matrix.target }}
+          path: target/${{ matrix.target }}/dist/makedo-*.tar.gz*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: makedo-*.tar.gz*

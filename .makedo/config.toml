@@ -1,0 +1,4 @@
+[provider]
+kind = "qwen-vast"
+model = "qwen3.8"
+api_key_env = "QWEN_VAST_TOKEN"

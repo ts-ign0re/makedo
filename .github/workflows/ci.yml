@@ -1,0 +1,55 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --check
+      - name: clippy (warnings = errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: tests
+        run: cargo test --workspace
+      - name: build dist
+        run: cargo build --profile dist
+      - name: offline native loop smoke (skills, logs, verification, resume)
+        run: |
+          python3 scripts/smoke.py target/dist/makedo
+          python3 scripts/smoke.py target/dist/makedo --openai
+          python3 scripts/smoke.py target/dist/makedo --openai --output-limit
+          python3 scripts/smoke_memory.py target/dist/makedo
+      - name: binary size gate (< 15MB, PLAN §1.2)
+        run: |
+          size=$(stat -c%s target/dist/makedo)
+          echo "binary: $((size / 1024 / 1024))MB"
+          test "$size" -lt 15728640
+      - name: startup gate (< 150ms, PLAN §1.2)
+        run: |
+          start=$(date +%s%N)
+          ./target/dist/makedo --version
+          end=$(date +%s%N)
+          ms=$(( (end - start) / 1000000 ))
+          echo "startup: ${ms}ms"
+          test "$ms" -lt 150
+      - name: wiki check (dogfood)
+        run: ./target/dist/makedo wiki check
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses advisories

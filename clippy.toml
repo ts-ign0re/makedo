@@ -1,0 +1,5 @@
+cognitive-complexity-threshold = 25
+disallowed-methods = [
+    { path = "tokio::sync::mpsc::unbounded_channel", reason = "bounded-каналы обязательны (PLAN §1.1)" },
+    { path = "std::thread::sleep", reason = "в async-коде используйте tokio::time::sleep" },
+]

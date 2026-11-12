@@ -1,0 +1,21 @@
+[package]
+name = "makedo-wiki"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+makedo-types = { workspace = true }
+thiserror = { workspace = true }
+makedo-tools = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+ignore = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[lints]
+workspace = true

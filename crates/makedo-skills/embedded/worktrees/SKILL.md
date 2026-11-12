@@ -1,0 +1,16 @@
+---
+name: worktrees
+description: Isolate parallel edit tasks, retain ownership, review changes, and integrate a feature worktree safely. Load before task(kind=edit), worktree_create or worktree_finish.
+---
+# Worktree collaboration
+
+1. Inspect the current branch, HEAD and working changes. Preserve the user's changes. Do not switch branches, stash, reset, clean or force-remove files in the user's checkout to make a task fit.
+2. Research uses read-only tools in the current checkout. Editing delegated to an agent uses one named worktree per independent task. Names use ASCII letters, digits, hyphen or underscore. Each worktree starts at the parent's committed HEAD; uncommitted parent changes are not inherited. If they are required, explain the dependency and do not silently mix them into a commit.
+3. worktree_create prepares a checkout. Edit through task(kind=edit) or `makedo --worktree <name>` so the process holds the ownership lease. Do not run two editors in the same worktree. Do not reuse another task's branch or remove its lease/metadata to bypass a busy result. Worktree and branch must match MAKEDO's ownership record.
+4. Give the child a precise scope, base/dependencies, expected artifacts and verification commands. The child edits only its worktree, including its own `.makedo/wiki`; it does not merge, push or alter the parent's checkout. Its report names files changed, commands and outcomes, full log paths, remaining failures and its branch/worktree. The parent owns integration.
+5. Build/test/application output goes to files. Use Heavy's shared pool for expensive work; do not bypass it with private pools. A completed child report is not proof of verification: inspect the diff and the actual check results. Wait for child cleanup before releasing ownership, even on cancellation.
+6. Before finish, review the complete feature diff, check the working tree for accidental files and run the project's checks in the feature worktree. Integrate dependent worktrees in dependency order, one at a time. If the base advanced, reconcile changes and rerun affected checks in the feature worktree. Avoid rebase/force operations on another owner's branch.
+7. Finish requires an explicit integration request or prior authorization covering integration. `worktree_finish` / `makedo finish <name>` stages and commits leftover feature changes; ensure those are the intended files first. Runtime logs/history are excluded even when not ignored; already-staged runtime files must be inspected and unstaged first. The main checkout must be clean and still on the recorded base branch. MAKEDO previews the merge before changing it (Git >= 2.38); conflicts must be reconciled in the feature worktree. Do not change the main branch to bypass this check.
+8. Successful finish merges without switching the main checkout. A clean feature worktree and branch are removed only after a successful merge; worktrees containing runtime logs or session history are retained. Never delete unmerged work or useful logs as cleanup. Push/publication is a separate action requiring authorization.
+
+Existing unmanaged worktree directories are not automatically adopted. Inspect `git worktree list` and the recorded base; do not remove user work to recreate them.
