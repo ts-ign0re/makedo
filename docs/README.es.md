@@ -61,9 +61,8 @@ existen. makedo cierra esa brecha con tres cosas:
 | Rellenar la wiki | unos $0.15 para un monorepo de 350 mil líneas |
 | Presupuestos (controles en CI) | arranque < 150 ms, memoria en reposo < 50 MB, binario < 15 MB |
 
-Son mediciones propias del proyecto: 22 ejecuciones en
-[benchmarks/betslip-ab](../benchmarks/betslip-ab), analizadas en
-[CORE.md](CORE.md) (en ruso).
+Son mediciones propias del proyecto sobre 22 ejecuciones de benchmark, analizadas
+en [CORE.md](CORE.md) (en ruso).
 
 ## Características
 

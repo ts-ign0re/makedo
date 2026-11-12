@@ -58,8 +58,7 @@ makedo 是一个在你的代码仓库里编写和修改代码的智能体。名�
 | 填充 wiki | 35 万行的单体仓库约 $0.15 |
 | 性能预算（CI 门禁） | 启动 < 150 ms，空闲内存 < 50 MB，二进制 < 15 MB |
 
-以上是项目自己的测量结果：[benchmarks/betslip-ab](../benchmarks/betslip-ab) 中的
-22 次运行，分析见 [CORE.md](CORE.md)（俄语）。
+以上是项目自己的测量结果，共 22 次基准测试运行，分析见 [CORE.md](CORE.md)（俄语）。
 
 ## 功能
 

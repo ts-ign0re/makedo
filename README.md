@@ -60,8 +60,7 @@ closes that gap with three things:
 | Filling the wiki | about $0.15 for a 350k-line monorepo |
 | Budgets (CI gates) | startup < 150 ms, idle memory < 50 MB, binary < 15 MB |
 
-These are the project's own measurements: 22 runs in
-[benchmarks/betslip-ab](benchmarks/betslip-ab), analysed in
+These are the project's own measurements over 22 benchmark runs, analysed in
 [docs/CORE.md](docs/CORE.md) (in Russian).
 
 ## Features
