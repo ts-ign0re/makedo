@@ -1,3 +1,5 @@
 [toolchain]
-channel = "stable"
+# Версия закреплена: при строгих линтах (pedantic + -D warnings) плавающий stable
+# ломает CI с каждым выпуском Rust. Поднимать осознанно, вместе с правкой новых линтов.
+channel = "1.97.1"
 components = ["rustfmt", "clippy"]
