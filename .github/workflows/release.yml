@@ -54,10 +54,25 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/release-footer.md
+            docs/releases
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
+      # текст релиза: особенности версии из docs/releases/<тег>.md (если файл есть)
+      # плюс общий блок про установку и загрузки
+      - name: release notes
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then cat "$notes" > body.md; fi
+          sed "s/{{TAG}}/${GITHUB_REF_NAME}/g" .github/release-footer.md >> body.md
       - uses: softprops/action-gh-release@v2
         with:
+          name: makedo ${{ github.ref_name }}
+          body_path: body.md
           files: makedo-*.tar.gz*
           generate_release_notes: true
