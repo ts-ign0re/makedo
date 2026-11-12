@@ -9,6 +9,7 @@
 <p align="center">用 Rust 编写的编程智能体：单个二进制文件，可在终端或独立窗口中运行。</p>
 
 <p align="center">
+  <a href="https://github.com/ts-ign0re/makedo/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ts-ign0re/makedo/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square" alt="许可证：GPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/rust-1.95%2B-orange?style=flat-square&logo=rust" alt="Rust 1.95+">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" alt="Linux | macOS">
