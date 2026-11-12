@@ -172,7 +172,7 @@ En la interfaz: `/models`, `/effort`, `/theme`, `/doctrine`, `/ponytail`,
 
 ## Documentación
 
-La mayor parte de la documentación está en ruso.
+La documentación está en inglés.
 
 - [Referencia](REFERENCE.md) — proveedores y modelos, cola de mensajes, edición de
   archivos, registros, skills, memoria

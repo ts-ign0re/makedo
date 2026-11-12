@@ -1,12 +1,12 @@
-# Справочник / Reference
+# Reference
 
-Поведение агента в деталях. Часть разделов на русском, часть на английском.
+How the agent behaves, in detail.
 
-## Провайдеры и модели
+## Providers and models
 
-Каталог моделей обновляется командой `makedo models --refresh` и автоматически
-раз в час. Пользовательские OpenAI-compatible провайдеры (например, Qwen на
-Vast) задаются в `~/.makedo/models.json` (`$MAKEDO_HOME/models.json` при override):
+The model catalog is refreshed with `makedo models --refresh` and automatically
+once an hour. Custom OpenAI-compatible providers (for example Qwen on Vast) are
+defined in `~/.makedo/models.json` (`$MAKEDO_HOME/models.json` when overridden):
 
 ```json
 {
@@ -23,47 +23,50 @@ Vast) задаются в `~/.makedo/models.json` (`$MAKEDO_HOME/models.json` п
 }
 ```
 
-Укажите ID из `/v1/models` и реальные лимиты сервера; `0` означает неизвестный
-лимит. Эта запись заменяет одноимённого провайдера каталога и сохраняется при
-обновлении. Провайдер появится в `/models` после запуска makedo; токен вводится
-там же или берётся из указанной переменной/`~/.makedo/credentials.toml`.
+Use the ID from `/v1/models` and the server's real limits; `0` means an unknown
+limit. This entry replaces the catalog provider with the same name and survives a
+refresh. The provider appears in `/models` after makedo starts; the token is
+entered there, or taken from the named variable or from
+`~/.makedo/credentials.toml`.
 
-Для `provider.kind = "openai"` (включая свой `base_url`) и адреса
-`api.openai.com` используется Responses API с `max_output_tokens`: reasoning
-работает вместе с инструментами, его зашифрованное состояние сохраняется при
-`--resume`. Запросы идут с `store: false`. Остальные совместимые провайдеры
-используют Chat Completions с `max_tokens`.
+For `provider.kind = "openai"` (including a custom `base_url`) and the
+`api.openai.com` address, the Responses API is used with `max_output_tokens`:
+reasoning works together with tools, and its encrypted state is kept across
+`--resume`. Requests are sent with `store: false`. Other compatible providers use
+Chat Completions with `max_tokens`.
 
-### Подписка ChatGPT
+### ChatGPT subscription
 
-Подписка ChatGPT: `makedo login chatgpt` открывает вход OpenAI в браузере (OAuth с
-PKCE, ответ приходит на `127.0.0.1`). После входа `provider.kind = "chatgpt"`
-работает через Responses API в счёт квоты плана — собственным циклом Makedo, со
-всеми его инструментами, в отличие от делегата `codex-cli`. `makedo login chatgpt
-<model>` сразу делает модель текущей; доступные модели видны в `/models`. Токены
-лежат в `~/.makedo/chatgpt.json` (права 0600) и обновляются автоматически; чтобы
-сменить аккаунт, удалите этот файл и войдите заново. `max_output_tokens` на этом
-маршруте не отправляется: OpenAI его там не принимает. Кэш префикса на подписке
-не действует (сервер сообщает ноль записанных и прочитанных токенов), поэтому
-каждый шаг расходует квоту полностью; долларовая цена для неё не показывается.
+`makedo login chatgpt` opens the OpenAI sign-in in the browser (OAuth with PKCE;
+the response comes back to `127.0.0.1`). After signing in,
+`provider.kind = "chatgpt"` works through the Responses API against the plan's
+quota — in makedo's own loop, with all its tools, unlike the `codex-cli` delegate.
+`makedo login chatgpt <model>` also makes that model the current one; the
+available models are listed in `/models`. Tokens are stored in
+`~/.makedo/chatgpt.json` (mode 0600) and refreshed automatically; to switch
+accounts, delete that file and sign in again. `max_output_tokens` is not sent on
+this route: OpenAI does not accept it there. Prefix caching does not apply on a
+subscription (the server reports zero tokens written and read), so every step
+spends quota in full; no dollar price is shown for it.
 
-### Лимит ответа
+### Response limit
 
-При исчерпании лимита ответа Makedo сохраняет полученный контекст и продолжает
-работу автоматически (до двух попыток), увеличивая бюджет ответа в пределах
-лимитов модели и окна контекста. Вызовы инструментов из оборванного ответа
-не исполняются: агент получает их статус и формирует полные вызовы заново.
+When a response hits its output limit, makedo keeps the context it received and
+continues automatically (up to two attempts), raising the response budget within
+the limits of the model and the context window. Tool calls from a truncated
+response are not executed: the agent receives their status and issues complete
+calls again.
 
-### Уровень reasoning
+### Reasoning level
 
-`/effort` открывает выбор уровня reasoning; `/effort xhigh` задаёт его напрямую.
-Уровень отображается рядом с моделью, действует со следующего запроса и
-сохраняется в `~/.makedo/effort.json` отдельно для провайдера, endpoint и модели.
-Модель по умолчанию при этом не меняется.
+`/effort` opens the reasoning-level picker; `/effort xhigh` sets it directly. The
+level is shown next to the model, takes effect from the next request and is saved
+in `~/.makedo/effort.json` separately for each provider, endpoint and model. The
+default model does not change.
 
-Для проверенного OpenAI-compatible endpoint профиль добавляется в его запись
-в `~/.makedo/models.json`, рядом с `api`, `env` и `models`. Например, для Swift
-1.5 / Qwen3.8 на Vast:
+For a verified OpenAI-compatible endpoint, the profile is added to its entry in
+`~/.makedo/models.json`, next to `api`, `env` and `models`. For example, for Swift
+1.5 / Qwen3.8 on Vast:
 
 ```json
 "effort": {
@@ -71,17 +74,18 @@ PKCE, ответ приходит на `127.0.0.1`). После входа `prov
 }
 ```
 
-Без явного профиля параметр `reasoning_effort` не отправляется. Уровни не
-угадываются по имени модели; `high` не является заменой `xhigh` для этого Qwen.
+Without an explicit profile the `reasoning_effort` parameter is not sent. Levels
+are not guessed from the model name; `high` is not a substitute for `xhigh` for
+this Qwen.
 
-## Очередь сообщений
+## Message queueing
 
-Во время работы агента Enter ставит сообщение в очередь: оно сразу видно в
-ленте с отметкой `queued`. Перед следующим запросом к модели отметка снимается,
-сообщение не дублируется. Ctrl+Enter прерывает текущий шаг и передаёт агенту
-очередь вместе с новым текстом. Ctrl+Enter с пустым полем отправляет уже
-накопленную очередь. Результаты завершённых инструментов сохраняются;
-прерываемые вызовы получают результат отмены перед продолжением работы.
+While the agent is working, Enter queues the message: it appears in the feed right
+away with a `queued` mark. Before the next request to the model the mark is
+removed and the message is not duplicated. Ctrl+Enter interrupts the current step
+and hands the agent the queue together with the new text. Ctrl+Enter with an empty
+input sends the queue accumulated so far. Results of finished tools are kept;
+calls that are interrupted receive a cancellation result before work continues.
 
 ## Versioned file editing
 

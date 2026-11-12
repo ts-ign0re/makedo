@@ -165,8 +165,6 @@ In the interface: `/models`, `/effort`, `/theme`, `/doctrine`, `/ponytail`,
 
 ## Documentation
 
-Most of the documentation is in Russian.
-
 - [Reference](docs/REFERENCE.md) — providers and models, message queueing, file
   editing, logs, skills, memory
 - [Product core](docs/CORE.md) — the thesis, positioning, measurements

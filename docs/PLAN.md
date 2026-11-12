@@ -1,125 +1,125 @@
-# MAKEDO — план разработки
+# makedo — development plan
 
-Rust coding-agent harness для машин 4–6-летней давности (8 GB RAM, 4 ядра, без AVX2-гарантий).
-Референсный документ: каждое решение либо обосновано, либо помечено **[открытый вопрос]**.
-База: анализ grok-build (Rust, xAI) и opencode (TS/Bun) — берём проверенное, чиним найденные баги, не тащим лишнее.
+A Rust coding-agent harness for machines that are 4–6 years old (8 GB RAM, 4 cores, no AVX2 guarantee).
+This is a reference document: every decision is either justified or marked **[open question]**.
+Basis: an analysis of grok-build (Rust, xAI) and opencode (TS/Bun) — we take what is proven, fix the bugs we found, and leave out the rest.
 
 ---
 
-## 1. Принципы проектирования
+## 1. Design principles
 
-### 1.1 Каноны строгого Rust
+### 1.1 Strict Rust conventions
 
-**Edition / MSRV.** Edition 2024. MSRV = stable − 2 релиза, зафиксирован в `rust-toolchain.toml` и проверяется в CI. Обоснование: RPITIT и async fn in traits нужны (≥1.75), гнаться за nightly незачем; «−2» даёт дистрибутивам и контрибьюторам люфт.
+**Edition / MSRV.** Edition 2024. MSRV = stable − 2 releases, pinned in `rust-toolchain.toml` and checked in CI. Rationale: we need RPITIT and async fn in traits (≥1.75), and there is no reason to chase nightly; "−2" gives distributions and contributors some slack.
 
-**Lint-политика** (workspace-уровневая, `[workspace.lints]`):
+**Lint policy** (workspace-level, `[workspace.lints]`):
 
 ```toml
 [workspace.lints.rust]
-unsafe_code = "deny"          # весь workspace; исключение — только отдельным крейтом с обоснованием в README крейта
+unsafe_code = "deny"          # whole workspace; the only exception is a separate crate with a justification in that crate's README
 missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-unwrap_used = "deny"          # в lib-крейтах; тесты — allow
+unwrap_used = "deny"          # in lib crates; tests — allow
 expect_used = "deny"
 panic = "deny"
 dbg_macro = "deny"
 todo = "deny"
-large_enum_variant = "deny"   # прямая RAM-метрика
+large_enum_variant = "deny"   # a direct RAM metric
 ```
 
-Из pedantic точечно `allow`: `module_name_repetitions`, `must_use_candidate`, `missing_errors_doc` (на старте). `nursery` — не включаем скопом (нестабильные false-positives), берём точечно: `significant_drop_tightening` (прямо ловит «guard через .await» — класс багов, задокументированный в grok-build).
+From pedantic we selectively `allow`: `module_name_repetitions`, `must_use_candidate`, `missing_errors_doc` (at the start). We do not enable `nursery` wholesale (unstable false positives); we pick individual lints: `significant_drop_tightening` (it directly catches "guard held across .await" — a class of bugs documented in grok-build).
 
 `clippy.toml`:
-- `disallowed-methods`: `tokio::sync::mpsc::unbounded_channel` (бэкпрешер обязателен — grok-build использует unbounded mpsc для результатов тулов, мы запрещаем), `std::thread::sleep` (в async-коде), `std::process::exit` (кроме bin).
-- `disallowed-types`: `std::sync::Mutex` в async-крейтах (либо `parking_lot` с правилом «не держать через .await», либо `tokio::sync`).
+- `disallowed-methods`: `tokio::sync::mpsc::unbounded_channel` (backpressure is mandatory — grok-build uses an unbounded mpsc for tool results, we forbid it), `std::thread::sleep` (in async code), `std::process::exit` (except in the bin).
+- `disallowed-types`: `std::sync::Mutex` in async crates (use either `parking_lot` with the rule "never hold across .await", or `tokio::sync`).
 - `cognitive-complexity-threshold = 25`.
 
-Обоснование урока: в grok-build security-критичный крейт sandbox несёт `#![allow(dead_code, unreachable_code, ...)]` — у нас per-file allow запрещён ревью-политикой, только per-expression с комментарием.
+The lesson behind this: in grok-build the security-critical sandbox crate carries `#![allow(dead_code, unreachable_code, ...)]` — our review policy forbids per-file allow; only per-expression allow with a comment is permitted.
 
-**Error handling по слоям.**
-- Lib-крейты: `thiserror`, типизированные enum-ошибки на границе крейта. Ошибка, видимая модели (текст в tool result), — отдельный тип/поле, не `Display` внутренней ошибки: то, что читает LLM, — это API, его нельзя случайно менять рефакторингом (урок opencode: `InvalidArgumentsError` с model-facing текстом — правильный паттерн).
-- `bin`/TUI-верхушка: `anyhow` допустим.
-- Паники: запрещены на рантайм-путях (lint выше). `panic = "abort"` в релизе ⇒ любая паника = смерть процесса, значит паника — это только «инвариант программиста нарушен», не обработка ввода.
+**Error handling by layer.**
+- Lib crates: `thiserror`, typed error enums at the crate boundary. An error visible to the model (the text in a tool result) is a separate type/field, not the `Display` of an internal error: what the LLM reads is an API, and a refactoring must not change it by accident (lesson from opencode: `InvalidArgumentsError` with model-facing text is the right pattern).
+- `bin`/TUI top layer: `anyhow` is allowed.
+- Panics: forbidden on runtime paths (see the lints above). `panic = "abort"` in release ⇒ any panic kills the process, so a panic means only "a programmer invariant was violated", never input handling.
 
-**Инварианты через типы.** Newtype-и вместо `String`/`usize` там, где перепутывание — реальный баг:
-- `QualifiedToolName` — конструктор валидирует ровно одну границу `__` и регекс `^[A-Za-z_][A-Za-z0-9_-]{0,63}$` (строжайший общий знаменатель провайдеров, из grok-build). Это типом чинит два найденных бага: `contains("__")` как признак MCP-тула и молчаливые коллизии имён в opencode.
+**Invariants through types.** Newtypes instead of `String`/`usize` wherever mixing values up is a real bug:
+- `QualifiedToolName` — the constructor validates exactly one `__` boundary and the regex `^[A-Za-z_][A-Za-z0-9_-]{0,63}$` (the strictest common denominator across providers, from grok-build). The type itself fixes two bugs we found: `contains("__")` as the test for an MCP tool, and silent name collisions in opencode.
 - `ToolId`, `ServerName`, `WikiNodeName`, `EdgeKind`, `ByteBudget`, `TokenEstimate`.
-- Каналы: только bounded, ёмкость — const с комментарием-обоснованием.
+- Channels: bounded only; the capacity is a const with a comment that justifies it.
 
-**Чек за лень (ponytail-дисциплина).** Нетривиальная логика (парсер, лок-схема, стейт-машина) обязана оставить минимальный runnable-тест. Сознательные упрощения помечаются `// ponytail: <потолок и путь апгрейда>` — и собираются в ledger.
+**The price of laziness (ponytail discipline).** Non-trivial logic (a parser, a locking scheme, a state machine) must leave behind a minimal runnable test. Deliberate simplifications are marked `// ponytail: <ceiling and upgrade path>` and collected into a ledger.
 
-### 1.2 Принципы производительности под старое железо
+### 1.2 Performance principles for old hardware
 
-**Принцип №1: makedo знает, на чём работает.** При старте детектится RAM/cores/disk (`makedo_types::resources`, алгоритмически, без зависимостей) и из них выводится единый `Budget`: потолок параллельных тулов, capture-cap, blocking-пул. <8GB RAM = «тесный» режим (жмёмся сильнее). Экономия токенов — тем же принципом: ponytail-скилл (меньше кода = меньше токенов) и LLM wiki (меньше поисковых итераций), причём **wiki ведётся в ponytail/caveman-стиле** — телеграфные ноды без прозы: каждый сэкономленный токен экономится при каждом будущем чтении.
+**Principle #1: makedo knows what it is running on.** At startup it detects RAM/cores/disk (`makedo_types::resources`, algorithmically, with no dependencies) and derives a single `Budget` from them: the cap on parallel tools, the capture cap, the blocking pool. <8GB RAM = "tight" mode (we squeeze harder). Token savings follow the same principle: the ponytail skill (less code = fewer tokens) and the LLM wiki (fewer search iterations), and **the wiki is written in ponytail/caveman style** — telegraphic nodes without prose: every token saved is saved again on every future read.
 
-**Бюджеты — это CI-гейты, не пожелания** (числа — стартовые, уточняются после первого замера на референс-машине; референс: MacBook Pro 2019 i5-8257U / 8 GB и Linux-ноутбук того же класса):
+**Budgets are CI gates, not wishes** (the numbers are starting values, to be refined after the first measurement on the reference machine; reference: MacBook Pro 2019 i5-8257U / 8 GB and a Linux laptop of the same class):
 
-| Метрика | Бюджет |
+| Metric | Budget |
 |---|---|
-| Холодный старт → первый кадр TUI | < 150 мс |
-| RSS в простое (TUI открыт, сессия пустая) | < 50 MB |
-| RSS в типовой сессии (без учёта child-процессов) | < 300 MB |
-| Детерминированный wiki-seed, репо 10k файлов | < 5 с |
-| `search_tool` p99 | < 5 мс |
-| Бинарь на таргет (stripped) | < 15 MB |
-| Чистая сборка CI | < 5 мин; инкрементальная локально < 15 с |
+| Cold start → first TUI frame | < 150 ms |
+| Idle RSS (TUI open, empty session) | < 50 MB |
+| RSS in a typical session (excluding child processes) | < 300 MB |
+| Deterministic wiki seed, 10k-file repo | < 5 s |
+| `search_tool` p99 | < 5 ms |
+| Binary per target (stripped) | < 15 MB |
+| Clean CI build | < 5 min; incremental local build < 15 s |
 
-**Правила аллокаций и данных:**
-- Большое — на диск, не в RAM: вывод тулов сверх лимита спиллится в файл (обе кодовые базы так делают; берём и «рулящие» подсказки grok-build: JSON → «используй jq»).
-- Стриминг: rolling window для вывода bash (модель opencode: 2×лимит в памяти, дальше — файловый sink); дельты в TUI — только append, cap на кадр 16 KiB (модель grok-build, включая UTF-8-safe границы).
-- `Cow<'_, str>` fast-path в трункации (паттерн grok-build), `with_capacity` при известном размере, стартовая ёмкость буферов ≤ 64 KiB даже при больших потолках (паттерн grok-build grep).
-- Никаких полных клонов снапшотов на запрос (анти-паттерн: BM25 в grok-build клонирует весь каталог схем на каждый `search_tool`) — индексы кэшируются по generation.
-- Никакой пересериализации мира после каждого тул-колла (анти-паттерн: `Resources::serialize` в grok-build) — персистится только изменившийся компонент, dirty-флагами.
+**Allocation and data rules:**
+- Large data goes to disk, not RAM: tool output over the limit is spilled to a file (both codebases do this; we also take grok-build's "steering" hints: JSON → "use jq").
+- Streaming: a rolling window for bash output (the opencode model: 2×limit in memory, then a file sink); TUI deltas are append-only, with a 16 KiB cap per frame (the grok-build model, including UTF-8-safe boundaries).
+- A `Cow<'_, str>` fast path in truncation (grok-build pattern), `with_capacity` when the size is known, an initial buffer capacity of ≤ 64 KiB even with large ceilings (grok-build grep pattern).
+- No full snapshot clones per request (anti-pattern: BM25 in grok-build clones the whole schema catalog on every `search_tool`) — indexes are cached by generation.
+- No re-serializing the world after every tool call (anti-pattern: `Resources::serialize` in grok-build) — only the changed component is persisted, tracked with dirty flags.
 
-**Планировщик.** tokio, `worker_threads = min(4, cores)`, `max_blocking_threads` ограничен (по умолчанию 512 — на 8 GB это потенциальные гигабайты стеков). `spawn_blocking` — только для реального блокирующего I/O (walk файловой системы, git-команды); CPU-задачи > 1 мс (BM25-построение, парсинг vault) — тоже туда, чтобы не давить реактор. Поллинг запрещён: `Notify`/`watch` вместо sleep-циклов (анти-паттерн: 50 мс interjection-поллинг в grok-build).
+**Scheduler.** tokio, `worker_threads = min(4, cores)`, `max_blocking_threads` is capped (the default is 512 — on 8 GB that is potentially gigabytes of stacks). `spawn_blocking` is only for real blocking I/O (file system walks, git commands); CPU tasks > 1 ms (building BM25, parsing the vault) go there too, so they do not choke the reactor. Polling is forbidden: `Notify`/`watch` instead of sleep loops (anti-pattern: the 50 ms interjection polling in grok-build).
 
-**Политика зависимостей.** Каждый dep — строка в `docs/DEPS.md`: зачем, что отвергнуто, стоимость (transitive count, вклад в бинарь по `cargo bloat`). Метрики в CI: количество transitive deps (гейт: рост требует обоснования в PR), `cargo deny` (лицензии + advisories). Feature-минимализм: `default-features = false` всюду, включаем поимённо.
+**Dependency policy.** Every dep is a row in `docs/DEPS.md`: why it is needed, what was rejected, the cost (transitive count, contribution to the binary per `cargo bloat`). CI metrics: the number of transitive deps (gate: growth needs a justification in the PR), `cargo deny` (licenses + advisories). Feature minimalism: `default-features = false` everywhere, features are enabled by name.
 
 ---
 
-## 2. Архитектура workspace
+## 2. Workspace architecture
 
 ```
 makedo/
 ├── crates/
-│   ├── makedo-types      # общий словарь: newtype-и, события, ошибки-границы. Зависит только от serde
-│   ├── makedo-config     # TOML, merge global→project, схема ~/.makedo
-│   ├── makedo-tools      # трейт Tool, реестр, встроенные тулы, трункация, спиллы
-│   ├── makedo-wiki       # парсер vault, граф, BM25, init/seed, check
-│   ├── makedo-skills     # SKILL.md-лоадер, embedded ponytail
-│   ├── makedo-providers  # трейт Provider, Anthropic + OpenAI-compat, SSE-декодер
-│   ├── makedo-mcp        # rmcp-клиент, lifecycle, meta-tools
-│   ├── makedo-session    # актор сессии, agent loop, permissions, компакция
-│   └── makedo-tui        # ratatui-рендер, спиннеры, темы
-└── src/main.rs         # bin `makedo`: CLI-парсинг, wiring, anyhow
+│   ├── makedo-types      # shared vocabulary: newtypes, events, boundary errors. Depends only on serde
+│   ├── makedo-config     # TOML, global→project merge, ~/.makedo layout
+│   ├── makedo-tools      # Tool trait, registry, built-in tools, truncation, spills
+│   ├── makedo-wiki       # vault parser, graph, BM25, init/seed, check
+│   ├── makedo-skills     # SKILL.md loader, embedded ponytail
+│   ├── makedo-providers  # Provider trait, Anthropic + OpenAI-compat, SSE decoder
+│   ├── makedo-mcp        # rmcp client, lifecycle, meta-tools
+│   ├── makedo-session    # session actor, agent loop, permissions, compaction
+│   └── makedo-tui        # ratatui rendering, spinners, themes
+└── src/main.rs         # bin `makedo`: CLI parsing, wiring, anyhow
 ```
 
-**Направление зависимостей** (строго вниз, циклы = ошибка сборки):
+**Dependency direction** (strictly downward; a cycle is a build error):
 
 ```
 makedo-types ← makedo-config ← {tools, wiki, skills, providers} ← makedo-mcp ← makedo-session ← makedo-tui ← bin
 ```
 
-- `makedo-mcp` зависит от `makedo-tools` (MCP-тулы регистрируются в общий реестр; BM25-движок берёт из `makedo-wiki`? — нет: **BM25 живёт в `makedo-types` как маленький модуль без зависимостей**, его используют и wiki, и mcp. ~150 строк, общий).
-- `makedo-tui` не знает про providers/mcp напрямую — только события сессии (`makedo-types::Event`).
-- Public API крейтов минимален: `pub(crate)` по умолчанию, `pub` — осознанно. `#[non_exhaustive]` на событиях и конфиг-структурах.
+- `makedo-mcp` depends on `makedo-tools` (MCP tools are registered in the shared registry; does it take the BM25 engine from `makedo-wiki`? — no: **BM25 lives in `makedo-types` as a small dependency-free module**, used by both wiki and mcp. ~150 lines, shared).
+- `makedo-tui` does not know about providers/mcp directly — only session events (`makedo-types::Event`).
+- The public API of each crate is minimal: `pub(crate)` by default, `pub` is a deliberate choice. `#[non_exhaustive]` on events and config structs.
 
-**Трейты-швы — только там, где вторая реализация реальна:**
-- `Provider` (реализаций ≥ 2 с первого дня).
-- `TokenCounter` (bytes/4 сейчас, BPE потом — шов из grok-build, который они построили и не использовали; мы хотя бы не заплатим за него лишним, это один trait-object в session).
-- `ToolDispatch` (object-safe граница для рекурсии use_tool → реестр).
-Всё остальное — конкретные типы. Никаких «interface с одной реализацией».
+**Trait seams — only where a second implementation is real:**
+- `Provider` (≥ 2 implementations from day one).
+- `TokenCounter` (bytes/4 now, BPE later — a seam from grok-build that they built and never used; at least we will not overpay for it, it is one trait object in session).
+- `ToolDispatch` (an object-safe boundary for the use_tool → registry recursion).
+Everything else is concrete types. No "interface with one implementation".
 
 ---
 
-## 3. Ключевые подсистемы
+## 3. Key subsystems
 
 ### 3.1 Tool runtime (`makedo-tools`)
 
-**Дизайн.** Типизированный трейт по образцу grok-build (лучшее, что есть в обеих кодовых базах):
+**Design.** A typed trait modeled on grok-build (the best there is in either codebase):
 
 ```rust
 trait Tool: Send + Sync {
@@ -132,49 +132,49 @@ trait Tool: Send + Sync {
 }
 ```
 
-RPITIT на типизированном пути (ноль боксинга), `#[async_trait]`-эквивалент только на erasure-границе `ToolDyn` (blanket impl делает JSON-декод + вызов). Прогрессив-стриминг (`ToolStream` с инвариантом `[Progress*, Terminal]`) — **отложен**: в M0 тулы возвращают один результат, стриминг вывода — только у bash через его собственный канал. `// ponytail: single-shot tool results; ToolStream когда появится второй тул с прогрессом`.
+RPITIT on the typed path (zero boxing); the `#[async_trait]` equivalent is used only at the `ToolDyn` erasure boundary (a blanket impl does the JSON decode + the call). Progressive streaming (`ToolStream` with the invariant `[Progress*, Terminal]`) is **deferred**: in M0 tools return a single result, and only bash streams its output, through its own channel. `// ponytail: single-shot tool results; ToolStream when a second tool with progress appears`.
 
-**Схемы.** `schemars` draft-07, `inline_subschemas = true` (обе базы инлайнят `$ref` — провайдеры их не переваривают), плюс LLM-нормализации из opencode: убрать `null` из anyOf опциональных полей, схлопнуть одноэлементные anyOf, гарантировать `type/properties/required`. Генерация схем — один раз при построении реестра, кэш по `ToolId`.
+**Schemas.** `schemars` draft-07, `inline_subschemas = true` (both codebases inline `$ref` — providers cannot digest them), plus the LLM normalizations from opencode: remove `null` from the anyOf of optional fields, collapse single-element anyOf, guarantee `type/properties/required`. Schemas are generated once, when the registry is built, and cached by `ToolId`.
 
-**Реестр.** `IndexMap<ToolId, Arc<dyn ToolDyn>>` (порядок = порядок объявления, O(1) lookup — чиним линейный скан по Vec из grok-build). Тулы модели отдаются в **алфавитном порядке имён** (opencode: стабильность prompt-кэша). Runtime-мутация (hot-add MCP-тулов) — через RwLock, guard никогда не живёт через `.await` (инвариант grok-build, у нас — под lint `significant_drop_tightening`).
+**Registry.** `IndexMap<ToolId, Arc<dyn ToolDyn>>` (order = declaration order, O(1) lookup — this fixes the linear scan over a Vec in grok-build). Tools are given to the model in **alphabetical order by name** (opencode: prompt cache stability). Runtime mutation (hot-adding MCP tools) goes through an RwLock, and the guard never lives across `.await` (a grok-build invariant; here it is enforced by the `significant_drop_tightening` lint).
 
-**Параллелизм.** То, чего нет ни у кого:
-- `Semaphore` с `min(4, cores)` пермитов на батч тул-коллов (opencode вообще без потолка: 30 параллельных bash = 30 процессов; на 8 GB это смерть).
-- Per-path write-локи из grok-build: пути из аргументов не-read-only коллов батча получают `Mutex`; захват — **в отсортированном порядке путей** (grok лочит один путь на колл; если колл затрагивает несколько — сортировка исключает deadlock).
-- Permission-фаза — последовательная до батча, отказ синтезирует tool_result для остальных (пара tool_use/tool_result не рвётся — инвариант, ради которого grok это сделал).
+**Parallelism.** What nobody else has:
+- A `Semaphore` with `min(4, cores)` permits per batch of tool calls (opencode has no cap at all: 30 parallel bash calls = 30 processes; on 8 GB that is fatal).
+- Per-path write locks from grok-build: paths from the arguments of the non-read-only calls in a batch each get a `Mutex`; they are acquired **in sorted path order** (grok locks one path per call; if a call touches several, sorting rules out deadlock).
+- The permission phase runs sequentially before the batch; a denial synthesizes a tool_result for the remaining calls (the tool_use/tool_result pair is never broken — the invariant grok did this for).
 
-**Отмена.** `CancellationToken` реально прокинут в каждый `ToolCtx` (grok построил и не подключил — у нас подключение = часть DoD M0): отмена турна → cancel token → тулы с процессами убивают children (SIGTERM → 3 с → SIGKILL, процесс-группа через setsid, паттерн grok-build), остальные — drop future. Reconciliation: после отмены каждому незавершённому коллу — синтетический `interrupted`-результат (модель opencode, 250 мс grace).
+**Cancellation.** A `CancellationToken` is actually threaded into every `ToolCtx` (grok built it and never wired it up — for us the wiring is part of the M0 DoD): turn cancellation → cancel token → tools with processes kill their children (SIGTERM → 3 s → SIGKILL, process group via setsid, grok-build pattern), the rest drop the future. Reconciliation: after cancellation every unfinished call gets a synthetic `interrupted` result (the opencode model, 250 ms grace).
 
-**Вывод.** Лимит по умолчанию 40 KB / 2000 строк (сходится у обеих баз ≈ 10k токенов); сверх — спилл в `~/.makedo/spill/<session>/<call>.{txt,json}` + классификация содержимого и рулящая подсказка (JSON → jq, длинные строки → bash-слайсинг; из grok-build) + agent-aware вариант (из opencode). Ретенция спиллов 7 дней, фоновая уборка.
+**Output.** The default limit is 40 KB / 2000 lines (both codebases converge on ≈ 10k tokens); anything above is spilled to `~/.makedo/spill/<session>/<call>.{txt,json}` + content classification and a steering hint (JSON → jq, long lines → bash slicing; from grok-build) + an agent-aware variant (from opencode). Spills are retained for 7 days and cleaned up in the background.
 
-**Встроенные тулы M0:** `read` (лимиты: 2000 строк, 2000 симв/строка), `write`, `edit` (string-replace), `bash` (fg/bg, таймаут дефолт 120 с, потолок 10 мин, rolling-window вывод), `grep`, `glob`, `todo`. Затем: `webfetch` (cap 5 MB, таймаут 30 с), wiki-тулы (§3.3), meta-tools MCP (§3.2). Отложено: task/subagents, lsp, websearch, медиа.
+**Built-in tools in M0:** `read` (limits: 2000 lines, 2000 chars/line), `write`, `edit` (string-replace), `bash` (fg/bg, default timeout 120 s, ceiling 10 min, rolling-window output), `grep`, `glob`, `todo`. Then: `webfetch` (cap 5 MB, timeout 30 s), wiki tools (§3.3), MCP meta-tools (§3.2). Deferred: task/subagents, lsp, websearch, media.
 
-**Permissions.** Модель opencode — упорядоченный ruleset `{permission, pattern, action: allow|ask|deny}`, последнее совпадение побеждает, дефолт ask; сессионные «always»-правила авторезолвят ожидающие запросы. Doom-loop-guard (N одинаковых коллов подряд → принудительный ask) — дёшев и полезен, берём. LLM-классификатор Auto-режима из grok-build — **отложен** (YAGNI: ещё один LLM-вызов на каждый bash — дорого для нашей аудитории). Разбор bash-команды для префиксов: консервативный сплит по `;|&&`, без tree-sitter в M0. **[открытый вопрос]** tree-sitter-bash (точность) vs самописный сплит (0 зависимостей): решаем по фактическим false-positive после dogfood.
+**Permissions.** The opencode model: an ordered ruleset `{permission, pattern, action: allow|ask|deny}`, the last match wins, the default is ask; session-level "always" rules auto-resolve pending requests. The doom-loop guard (N identical calls in a row → forced ask) is cheap and useful, so we take it. The LLM classifier of grok-build's Auto mode is **deferred** (YAGNI: one more LLM call for every bash command is expensive for our audience). Parsing a bash command into prefixes: a conservative split on `;|&&`, no tree-sitter in M0. **[open question]** tree-sitter-bash (accuracy) vs a hand-written split (0 dependencies): we decide based on the actual false positives after dogfooding.
 
-**Риски:** semaphore + per-path локи + permission-очередь — три механизма ожидания; тестом фиксируем отсутствие deadlock (loom не тянем — property-тест с таймаутом).
+**Risks:** the semaphore + per-path locks + the permission queue are three waiting mechanisms; a test pins down the absence of deadlock (we do not pull in loom — a property test with a timeout).
 
 ### 3.2 MCP (`makedo-mcp`)
 
-**Клиент.** `rmcp` (официальный SDK; отвергнуто: самописный клиент — протокол движется, не наша работа). Если версия rmcp потянет конфликт reqwest — карантиним в крейте, как grok-build (не ре-экспортируем reqwest наружу).
+**Client.** `rmcp` (the official SDK; rejected: a hand-written client — the protocol keeps moving, and that is not our job). If the rmcp version drags in a reqwest conflict, we quarantine it inside the crate, as grok-build does (we do not re-export reqwest).
 
-**Экспозиция модели — meta-tools, схемы MCP не попадают в манифест.** Причины (из grok-build, подтверждены их продом): стабильный тул-сет = KV-кэш не инвалидируется сервером, подключившимся посреди сессии; контекст не раздувается схемами; RAM не держит N×schema в каждом запросе.
-- `search_tool(query, limit)` — BM25 по каталогу; чиним оба бага grok-build: индекс кэшируется по generation каталога (пересборка — только на `tools/list_changed`), `total_hidden_tools` = действительно скрытые, не все.
-- `use_tool(name, input)` — диспатч по `QualifiedToolName`; «native tool correction» (подсказка «вызови напрямую», если имя совпало со встроенным) берём.
-- Коллизия qualified-имён при регистрации = громкая ошибка статуса сервера, не молчаливая перезапись (баг opencode).
+**Exposure to the model — meta-tools; MCP schemas do not go into the manifest.** Reasons (from grok-build, confirmed by their production use): a stable tool set = the KV cache is not invalidated by a server that connects mid-session; the context is not bloated with schemas; RAM does not hold N×schema in every request.
+- `search_tool(query, limit)` — BM25 over the catalog; we fix both grok-build bugs: the index is cached by catalog generation (rebuilt only on `tools/list_changed`), and `total_hidden_tools` = the tools that are actually hidden, not all of them.
+- `use_tool(name, input)` — dispatch by `QualifiedToolName`; we take the "native tool correction" (a "call it directly" hint when the name matches a built-in tool).
+- A collision of qualified names at registration = a loud server status error, not a silent overwrite (an opencode bug).
 
-**Транспорты.** stdio + streamable HTTP (SSE-конфиг маппится на streamable HTTP, как в grok-build — отдельного SSE-транспорта нет).
-- stdio-фрейминг — resilient (битая строка не роняет соединение, мусорные нотификации игнорируются, на мусор не отвечаем `-32600` — обоснование grok-build: сервер может эхо-зациклиться), **но с потолком строки 10 MB** — `read_until` без лимита в grok-build = OOM от враждебного сервера. Превышение → decode-error событие + разрыв.
-- Child-процессы: своя process group (setsid), на drop — killpg + reap; stderr — в лог-файл сервера.
+**Transports.** stdio + streamable HTTP (an SSE config maps to streamable HTTP, as in grok-build — there is no separate SSE transport).
+- stdio framing is resilient (a broken line does not drop the connection, garbage notifications are ignored, we do not answer garbage with `-32600` — grok-build's rationale: the server can get into an echo loop), **but with a 10 MB line ceiling** — an unlimited `read_until` in grok-build = OOM from a hostile server. Exceeding it → a decode-error event + disconnect.
+- Child processes: their own process group (setsid); on drop — killpg + reap; stderr goes to the server's log file.
 
-**Lifecycle.** Стейт-машина grok-build берётся как референс почти дословно (это код «после серии инцидентов»): `Empty → Pending → Initializing → Ready`; single-flight handshake (конкуренты паркуются на `Notify` с bounded-wait), RAII-guard восстанавливает состояние при отмене, generation-счётчик отбрасывает результаты устаревших инициализаций, `client_id` в событиях против stale teardown. Старт: `buffer_unordered(4)` (grok: 8; наши машины слабее), стратегия Progressive (первый промпт не ждёт все серверы; `search_tool` честно отвечает `status: "partial"`).
+**Lifecycle.** The grok-build state machine is taken as the reference almost verbatim (this is code written "after a series of incidents"): `Empty → Pending → Initializing → Ready`; single-flight handshake (competitors park on a `Notify` with a bounded wait), an RAII guard restores the state on cancellation, a generation counter discards the results of stale initializations, `client_id` in events guards against stale teardown. Startup: `buffer_unordered(4)` (grok: 8; our machines are weaker), Progressive strategy (the first prompt does not wait for all servers; `search_tool` honestly answers `status: "partial"`).
 
-**Рестарт.** Авто-рестарт с backoff — stdio `[1, 4, 16] с`, HTTP до ~2.5 мин (rolling deploy) — берём из grok-build (в opencode рестарта нет вообще — упавший сервер мёртв до ручного вмешательства). Гард от двойного рестарта — атомарный claim + RAII.
+**Restart.** Auto-restart with backoff — stdio `[1, 4, 16] s`, HTTP up to ~2.5 min (rolling deploy) — taken from grok-build (opencode has no restart at all — a crashed server stays dead until someone intervenes manually). The guard against a double restart is an atomic claim + RAII.
 
-**Нотификации.** `tools/list_changed` → коалесинг 50 мс окном по `(server, kind)` (grok-build: burst из 100 нотификаций = 1 событие) → инвалидация BM25-generation + событие в TUI.
+**Notifications.** `tools/list_changed` → coalescing in a 50 ms window by `(server, kind)` (grok-build: a burst of 100 notifications = 1 event) → BM25 generation invalidation + an event in the TUI.
 
-**Таймауты.** startup 30 с; tool call **60 с** дефолт (не 100 минут, как в grok-build) с per-tool override в конфиге и `resetTimeoutOnProgress`-эквивалентом.
+**Timeouts.** startup 30 s; tool call **60 s** by default (not 100 minutes, as in grok-build), with a per-tool override in the config and a `resetTimeoutOnProgress` equivalent.
 
-**Конфиг** — в `~/.makedo/config.toml` / `.makedo/config.toml`:
+**Config** — in `~/.makedo/config.toml` / `.makedo/config.toml`:
 
 ```toml
 [mcp.github]
@@ -188,82 +188,82 @@ url = "https://mcp.linear.app/mcp"
 headers = { Authorization = "Bearer ..." }
 ```
 
-**Совместимость с экосистемой Claude Code:** протокол общий (rmcp = та же спека), плюс импорт `.mcp.json` из корня проекта (map `mcpServers`: `command`-строка+`args` → наш массив; `type: http|sse|streamable-http`; `${VAR}` / `${VAR:-default}`-подстановка в command/args/env/url/headers). Прецедент — grok-build импортирует `~/.claude.json` и `~/.cursor/mcp.json`. WebSocket-транспорт не поддерживаем (YAGNI).
+**Compatibility with the Claude Code ecosystem:** the protocol is shared (rmcp = the same spec), plus import of `.mcp.json` from the project root (the `mcpServers` map: a `command` string + `args` → our array; `type: http|sse|streamable-http`; `${VAR}` / `${VAR:-default}` substitution in command/args/env/url/headers). Precedent: grok-build imports `~/.claude.json` and `~/.cursor/mcp.json`. We do not support the WebSocket transport (YAGNI).
 
-**Отложено:** OAuth (PKCE+DCR — большой кусок; bearer-заголовки покрывают старт; дизайн-референсы готовы: двухслойный дедуп grok-build, pending-provider opencode) — фаза M3; MCP resources/prompts/sampling/elicitation (grok прекрасно живёт без них); on-disk дескрипторы тулов.
+**Deferred:** OAuth (PKCE+DCR is a big chunk; bearer headers cover the start; the design references are ready: grok-build's two-layer dedup, opencode's pending-provider) — phase M3; MCP resources/prompts/sampling/elicitation (grok lives perfectly well without them); on-disk tool descriptors.
 
 ### 3.3 LLM Wiki (`makedo-wiki`)
 
-**Формат.** Obsidian-совместимый vault `.makedo/wiki/`: markdown-ноды, `[[wikilinks]]`, типизированные рёбра inline-полями `key:: [[Target]]` (грамматика traceability-graph: `satisfies`, `implemented-by`, `verified-by`, … — дефолтный набор, переопределяемый в `schema.md`). Совместимость с Obsidian — фича: человек открывает vault и видит граф.
+**Format.** An Obsidian-compatible vault at `.makedo/wiki/`: markdown nodes, `[[wikilinks]]`, typed edges as inline fields `key:: [[Target]]` (the traceability-graph grammar: `satisfies`, `implemented-by`, `verified-by`, … — a default set that can be overridden in `schema.md`). Obsidian compatibility is a feature: a person opens the vault and sees the graph.
 
-**Парсер.** Самописный (~100–200 строк): frontmatter (`serde_yaml`? — нет: **[решение]** минимальный key: value парсер, YAML целиком не нужен — `// ponytail: плоский frontmatter; serde_yaml если появятся вложенные структуры`), wikilinks, inline-поля. Граф — `HashMap<NodeId, Node>` + списки рёбер; petgraph отвергнут (нужны только lookup и BFS-обход).
+**Parser.** Hand-written (~100–200 lines): frontmatter (`serde_yaml`? — no: **[decision]** a minimal key: value parser, full YAML is not needed — `// ponytail: flat frontmatter; serde_yaml if nested structures appear`), wikilinks, inline fields. The graph is a `HashMap<NodeId, Node>` + edge lists; petgraph was rejected (we only need lookup and BFS traversal).
 
-**Индекс.** Общий BM25-модуль (см. §2): корпус = имя + заголовки + описание ноды; кэш по generation (mtime-хэш файлов vault); построение в `spawn_blocking`. Сотни нод = миллисекунды и мегабайты — измеряем, не оптимизируем заранее.
+**Index.** The shared BM25 module (see §2): corpus = node name + headings + description; cached by generation (an mtime hash of the vault files); built in `spawn_blocking`. Hundreds of nodes = milliseconds and megabytes — we measure, we do not optimize in advance.
 
-**Тулы:** `wiki_node(name)` (нода + входящие/исходящие рёбра), `wiki_trace(from, edge, depth)` (BFS по типу ребра). Поиск по нодам — единый `memory_search` (wiki импортируется в индекс памяти).
+**Tools:** `wiki_node(name)` (the node + its incoming/outgoing edges), `wiki_trace(from, edge, depth)` (BFS by edge type). Node search goes through the single `memory_search` (the wiki is imported into the memory index).
 
-**Init flow (обязателен при отсутствии wiki):**
-1. Нет `.git` → предложить `git init`; отказ = выход (требование: wiki живёт в git).
-2. `.makedo/wiki` в `.gitignore` → предупредить/убрать.
-3. Детерминированный seed без LLM: walk через `ignore` (уважает .gitignore), манифесты, дерево модулей, точки входа → каркасные ноды. Прогресс: spinner `scan` + счётчик файлов.
-4. Один LLM-проход **только по seed-сводке** (не по коду) → `index.md`-карта.
-5. `git add .makedo/wiki`; коммит — вместе с рабочим коммитом пользователя.
-6. Обогащение — инкрементально в ходе работы (обязанность агента, зашита в system prompt).
+**Init flow (mandatory when there is no wiki):**
+1. No `.git` → offer `git init`; refusal = exit (requirement: the wiki lives in git).
+2. `.makedo/wiki` is in `.gitignore` → warn/remove.
+3. A deterministic seed without an LLM: a walk via `ignore` (respects .gitignore), manifests, the module tree, entry points → skeleton nodes. Progress: the `scan` spinner + a file counter.
+4. One LLM pass **over the seed summary only** (not over the code) → the `index.md` map.
+5. `git add .makedo/wiki`; the commit goes together with the user's work commit.
+6. Enrichment is incremental, during the work (a duty of the agent, built into the system prompt).
 
-**`makedo wiki check`** — порт trace-check.js: нет мёртвых ссылок, обязательные рёбра по грамматике; warnings vs errors. Запускается перед коммитом wiki и доступен как CI-команда пользователю.
+**`makedo wiki check`** — a port of trace-check.js: no dead links, the edges the grammar requires are present; warnings vs errors. It runs before a wiki commit and is available to the user as a CI command.
 
-**Инварианты:** wiki-операции никогда не блокируют agent loop (всё через spawn_blocking + канал); vault читается лениво, полный парс — только при построении индекса.
+**Invariants:** wiki operations never block the agent loop (everything goes through spawn_blocking + a channel); the vault is read lazily, and a full parse happens only when the index is built.
 
-**Риск:** качество инкрементального обогащения зависит от дисциплины промпта — метрика «покрытие»: % изменённых в PR файлов, имеющих ноду. Меряем на dogfood.
+**Risk:** the quality of incremental enrichment depends on prompt discipline — the metric is "coverage": the % of files changed in a PR that have a node. We measure it while dogfooding.
 
 ### 3.4 Skills (`makedo-skills`)
 
-Claude-совместимый формат: `SKILL.md` с frontmatter (name, description) + references/. Источники: embedded (в бинаре, `include_str!`) → `~/.makedo/skills/` → `.makedo/skills/`; локальный переопределяет глобальный по имени.
+A Claude-compatible format: `SKILL.md` with frontmatter (name, description) + references/. Sources: embedded (in the binary, `include_str!`) → `~/.makedo/skills/` → `.makedo/skills/`; a local skill overrides a global one by name.
 
-**Ponytail** — embedded, активен по умолчанию, уровень в конфиге (`skills.ponytail = "full" | "lite" | "ultra" | false`). Перед вшиванием: проверка лицензии DietrichGebert/ponytail (MIT ожидается) + NOTICE-файл.
+**Ponytail** — embedded, active by default, the level is set in the config (`skills.ponytail = "full" | "lite" | "ultra" | false`). Before embedding it: check the license of DietrichGebert/ponytail (MIT expected) + a NOTICE file.
 
-Инжекция: секция system prompt. Динамическая подгрузка скилла по требованию (`skill`-тул) — M2; в M0 скиллы просто в системном промпте (их мало).
+Injection: a section of the system prompt. Loading a skill dynamically on demand (the `skill` tool) is M2; in M0 the skills are simply in the system prompt (there are few of them).
 
 ### 3.5 Session / agent loop (`makedo-session`)
 
-**Актор.** Одна сессия = один task, владеющий своим состоянием (история, todo, статусы) — никаких shared-локов на горячем пути (у grok-build это ChatState-актор; у них же анти-пример — глобальный `Mutex<Resources>`, который душит их собственный параллелизм; у нас состояние тулов раздельно и передаётся в `ToolCtx` явными `Arc`-хэндлами только там, где нужно). Вход — bounded mpsc команд, выход — `watch`/broadcast событий для TUI. **[решение]** Актор Send, на общем рантайме; `LocalSet`+`!Send` (как grok) — оптимизация, к которой вернёмся, только если границы Send начнут стоить заметных клонов.
+**Actor.** One session = one task that owns its state (history, todo, statuses) — no shared locks on the hot path (in grok-build this is the ChatState actor; they also provide the counter-example — a global `Mutex<Resources>` that chokes their own parallelism; our tool state is separate and is passed into `ToolCtx` through explicit `Arc` handles only where needed). Input is a bounded mpsc of commands, output is a `watch`/broadcast of events for the TUI. **[decision]** The actor is Send and runs on the shared runtime; `LocalSet`+`!Send` (as in grok) is an optimization we will return to only if Send boundaries start to cost noticeable clones.
 
-**Loop:** `prepare tools → stream LLM → батч тул-коллов (см. 3.1) → push результатов → повторять до stop`. Толерантность к `finish: stop` при эмитированных tool-calls (реальные провайдеры так делают — opencode). Repair неверного регистра имени тула + `invalid`-sink для мусорных коллов (opencode) — дёшево, спасает турны.
+**Loop:** `prepare tools → stream LLM → batch of tool calls (see 3.1) → push results → repeat until stop`. Tolerance for `finish: stop` when tool calls were emitted (real providers do this — opencode). Repair of wrong letter case in a tool name + an `invalid` sink for garbage calls (opencode) — cheap, and it saves turns.
 
-**Токены.** `bytes/4` (+765/изображение) через трейт `TokenCounter` — обе базы так живут в проде. Никакого BPE в M0.
+**Tokens.** `bytes/4` (+765/image) through the `TokenCounter` trait — both codebases run this way in production. No BPE in M0.
 
-**Компакция** — двухуровневая в M1, третий уровень позже:
-1. Prune: скрытие старых tool-выводов от модели (не удаление — UI видит всё), защита последних ~40k токенов и последних 2 турнов (числа opencode, проверенные продом).
-2. Truncate при реплее: старые tool-выводы до 2000 символов.
-3. Summarize-агент — отложен (YAGNI до реальных упоров в контекст на dogfood).
-Инвариант: пары tool_use/tool_result не рвутся никогда (оба движка это чтут; Anthropic reject'ит нарушение).
+**Compaction** — two levels in M1, a third level later:
+1. Prune: hide old tool outputs from the model (not delete them — the UI sees everything), protecting the last ~40k tokens and the last 2 turns (opencode's numbers, proven in production).
+2. Truncate on replay: old tool outputs down to 2000 characters.
+3. Summarize agent — deferred (YAGNI until we actually hit context limits while dogfooding).
+Invariant: tool_use/tool_result pairs are never broken (both engines honor this; Anthropic rejects a violation).
 
-**Стриминг:** SSE от провайдера → события → дельты в TUI (append-only, cap 16 KiB/кадр, UTF-8-safe границы — контракт grok-build).
+**Streaming:** SSE from the provider → events → deltas in the TUI (append-only, 16 KiB/frame cap, UTF-8-safe boundaries — the grok-build contract).
 
 ### 3.6 TUI (`makedo-tui`)
 
-Полноэкранный, по образцу grok-build. `ratatui` + `crossterm` (отвергнуто: cursive — тяжелее и менее живой; самописный рендер — не наша работа).
+Full-screen, modeled on grok-build. `ratatui` + `crossterm` (rejected: cursive — heavier and less active; a hand-written renderer — not our job).
 
-- Рендер только по dirty + тику активного спиннера; без «60 fps всегда» — это батарея и CPU старых машин.
-- Спиннеры: наборы кадров из cli-loaders (`unicode-animations` → статический `loaders.rs`, MIT + NOTICE). Маппинг `process_kind → spinner` — фиксированная таблица (braillewave→LLM, snake→tool, columns→батч, breathe→idle). ASCII-fallback для терминалов без braille-глифов (детект по TERM/локали + ручной флаг) — наша аудитория со старыми окружениями.
-- Каждая долгая операция обязана показывать: спиннер + фазу + счётчик (`⡿ индексация wiki — 142/380 файлов`).
-- Кастомизация из `~/.makedo/config.toml`: тема (палитра), спиннер-маппинг, keybindings.
+- Render only when dirty + on the tick of an active spinner; no "always 60 fps" — that costs battery and CPU on old machines.
+- Spinners: frame sets from cli-loaders (`unicode-animations` → a static `loaders.rs`, MIT + NOTICE). The `process_kind → spinner` mapping is a fixed table (braillewave→LLM, snake→tool, columns→batch, breathe→idle). An ASCII fallback for terminals without braille glyphs (detected from TERM/locale + a manual flag) — our audience has old environments.
+- Every long operation must show: a spinner + the phase + a counter (`⡿ indexing wiki — 142/380 files`).
+- Customization from `~/.makedo/config.toml`: theme (palette), spinner mapping, keybindings.
 
-### 3.7 Worktree-режим (session)
+### 3.7 Worktree mode (session)
 
-Параллельная работа над фичами без коллизий — через git worktrees:
+Parallel work on features without collisions, through git worktrees:
 
-- `makedo --worktree <name>` (или `/worktree <name>` в TUI): создаёт ветку `makedo/<name>` и `git worktree add .makedo/worktrees/<name>`; сессия работает в этой директории. Два запуска makedo в двух терминалах = две изолированные фичи, per-path локи их не касаются — файлы физически разные.
-- `.makedo/.gitignore` создаётся автоматически и содержит `worktrees/` и `spill/` (пользователь может убрать — тогда его выбор уважается: файл не перезаписывается, только дополняется при отсутствии записи).
-- **Завершение — только по явному запросу** (`/finish` в TUI или `makedo finish <name>`): merge ветки `makedo/<name>` в основную ветку репозитория (ту, что checked out в главном дереве), затем `git worktree remove` + удаление ветки. Незакоммиченные изменения в worktree — коммитятся перед merge с сообщением-сводкой. Merge предварительно проверяется без изменения основного дерева (Git >= 2.38). Конфликт исправляется в worktree; основное дерево должно быть чистым и оставаться на записанной базовой ветке. Worktree с логами или историей сохраняется после merge. Полные правила: [WORKTREES.md](WORKTREES.md).
-- Wiki (`.makedo/wiki`) — часть дерева: правки wiki в worktree приезжают в main вместе с merge ветки, историю понимания фичи ничто не теряет.
-- Реализация — git CLI-команды (`git worktree add/remove`, `git merge`), без libgit2 (лишний dep; git есть у целевой аудитории по определению — wiki уже требует его).
+- `makedo --worktree <name>` (or `/worktree <name>` in the TUI): creates the branch `makedo/<name>` and runs `git worktree add .makedo/worktrees/<name>`; the session works in that directory. Two makedo runs in two terminals = two isolated features; per-path locks do not affect them, because the files are physically different.
+- `.makedo/.gitignore` is created automatically and contains `worktrees/` and `spill/` (the user may remove them — that choice is then respected: the file is not overwritten, only appended to when an entry is missing).
+- **Finishing happens only on explicit request** (`/finish` in the TUI or `makedo finish <name>`): merge the branch `makedo/<name>` into the repository's main branch (the one checked out in the main tree), then `git worktree remove` + delete the branch. Uncommitted changes in the worktree are committed before the merge with a summary message. The merge is checked beforehand without changing the main tree (Git >= 2.38). A conflict is fixed in the worktree; the main tree must be clean and stay on the recorded base branch. A worktree with logs or history is kept after the merge. Full rules: [WORKTREES.md](WORKTREES.md).
+- The wiki (`.makedo/wiki`) is part of the tree: wiki edits made in a worktree arrive in main together with the branch merge, so the history of how the feature was understood is never lost.
+- Implementation: git CLI commands (`git worktree add/remove`, `git merge`), no libgit2 (an extra dep; the target audience has git by definition — the wiki already requires it).
 
 ### 3.8 Config (`makedo-config`)
 
-TOML. Merge: `~/.makedo/config.toml` → `.makedo/config.toml` (проект побеждает **целиком по записи** — семантика grok-build: без глубокого field-merge, предсказуемость важнее гибкости; документируем явно). Env-переопределения `MAKEDO_*`. Неизвестные ключи — не фатальны, но собираются в diagnostics (`makedo doctor`), паттерн grok-build. `$schema`-подобная валидация — просто `serde(deny_unknown_fields)` на каждой секции + отчёт.
+TOML. Merge: `~/.makedo/config.toml` → `.makedo/config.toml` (the project wins **per whole entry** — grok-build semantics: no deep field merge, predictability matters more than flexibility; we document this explicitly). `MAKEDO_*` env overrides. Unknown keys are not fatal, but they are collected into diagnostics (`makedo doctor`), a grok-build pattern. `$schema`-like validation is simply `serde(deny_unknown_fields)` on every section + a report.
 
-Секреты (API-ключи): `~/.makedo/credentials.toml`, chmod 0600, отдельно от конфига (паттерн grok-build).
+Secrets (API keys): `~/.makedo/credentials.toml`, chmod 0600, separate from the config (grok-build pattern).
 
 ### 3.9 Providers (`makedo-providers`)
 
@@ -273,49 +273,49 @@ trait Provider: Send + Sync {
 }
 ```
 
-M0: **Anthropic Messages API** + **OpenAI-compatible chat/completions**. M3: **openai-chatgpt** — ChatGPT-подписка через Codex-бэкенд (механизм opencode: OAuth PKCE на auth.openai.com c client_id Codex CLI + device flow; запросы на chatgpt.com/backend-api/codex/responses с заголовком ChatGPT-Account-Id; диалект — Responses API, третий EventMapper). OAuth-инфраструктура общая с MCP OAuth (M3). Риск: неофициальный канал, OpenAI может закрыть — второй бесплатно покрывает xAI, OpenRouter, Ollama/llama.cpp (локальные модели — релевантно аудитории без бюджета на API). SSE-декодер самописный (~80 строк; отвергнуто: reqwest-eventsource — лишний dep ради простого формата). **Каталог провайдеров/моделей — как у opencode: база models.dev** (M3): embed снапшота в бинарь + фоновое обновление в `~/.makedo/cache/models.json`; из каталога берутся context limits (для компакции), цены (для usage-строки TUI) и валидация имени модели; `makedo models` — список доступного. Тест-провайдер: DeepSeek (`deepseek-v4-flash`, openai-compat, base_url api.deepseek.com/v1). Ретраи: ≤3 с экспонентой + jitter на 429/5xx, respect Retry-After; отмена пробрасывается в HTTP abort. Нормализация tool-calls обоих диалектов в единый `LlmEvent`.
+M0: **Anthropic Messages API** + **OpenAI-compatible chat/completions**. M3: **openai-chatgpt** — a ChatGPT subscription through the Codex backend (opencode's mechanism: OAuth PKCE on auth.openai.com with the Codex CLI client_id + device flow; requests go to chatgpt.com/backend-api/codex/responses with the ChatGPT-Account-Id header; the dialect is the Responses API, a third EventMapper). The OAuth infrastructure is shared with MCP OAuth (M3). Risk: this is an unofficial channel and OpenAI may close it — the second one covers xAI, OpenRouter, Ollama/llama.cpp for free (local models are relevant for an audience with no API budget). The SSE decoder is hand-written (~80 lines; rejected: reqwest-eventsource — an extra dep for a simple format). **The provider/model catalog is the same as in opencode: the models.dev database** (M3): a snapshot embedded in the binary + a background refresh into `~/.makedo/cache/models.json`; the catalog supplies context limits (for compaction), prices (for the TUI usage line) and model name validation; `makedo models` lists what is available. Test provider: DeepSeek (`deepseek-v4-flash`, openai-compat, base_url api.deepseek.com/v1). Retries: ≤3 with exponential backoff + jitter on 429/5xx, respect Retry-After; cancellation propagates into an HTTP abort. Tool calls of both dialects are normalized into a single `LlmEvent`.
 
 ---
 
-## 4. Зависимости (shortlist)
+## 4. Dependencies (shortlist)
 
-| Крейт | Зачем | Отвергнуто | Стоимость |
+| Crate | Why | Rejected | Cost |
 |---|---|---|---|
-| `tokio` (rt-multi-thread, macros, process, io-util, fs, sync, time, signal) | рантайм | async-std (мёртв), smol (экосистема rmcp/reqwest = tokio) | большой, но безальтернативный |
-| `serde`, `serde_json` | всё | — | базовый |
-| `toml` | конфиг | — | мал |
-| `thiserror` | ошибки lib | snafu | нулевой (макро) |
-| `anyhow` | bin | — | мал |
-| `schemars` (draft-07) | схемы тулов | самописные схемы (ошибкоопасно) | средний, compile-time |
-| `rmcp` (client, минимальные транспорт-фичи) | MCP | самописный клиент | средний; риск конфликта версий reqwest — карантин |
-| `reqwest` (rustls-tls, json, stream; default-features=false) | HTTP/SSE | ureq (нет async-стриминга), hyper напрямую (много ручной работы) | большой; rustls вместо openssl — кросс-компиляция без системных либ |
-| `ratatui` + `crossterm` | TUI | cursive, самописный | средний |
-| `ignore` + `globset` | walk/glob (движок ripgrep как lib) | subprocess rg (нет на старых машинах, +бинарь), walkdir (не уважает gitignore) | мал |
-| `grep-searcher` + `grep-regex` | grep-тул | subprocess rg | средний |
-| `tokio-util` | CancellationToken | — | мал |
-| `parking_lot` | sync-локи вне .await | std Mutex | мал |
-| `indexmap` | реестр тулов | — | мал |
-| `tracing` + `tracing-subscriber` (fmt, env-filter) | логи в файл | log | средний; в релизе — только file-логгер |
-| `dirs` | ~/.makedo | самописный | мал |
-| BM25 | **самописный модуль** (~150 строк в makedo-types) | tantivy (mmap-индексы, огромный compile time — на корпус из сотен документов это молоток для мухи), крейт `bm25` (лишний dep ради формулы) | нулевой |
-| frontmatter/wikilinks | самописный парсер | комбинаторы (nom/winnow) — грамматика тривиальна | нулевой |
+| `tokio` (rt-multi-thread, macros, process, io-util, fs, sync, time, signal) | runtime | async-std (dead), smol (the rmcp/reqwest ecosystem = tokio) | large, but there is no alternative |
+| `serde`, `serde_json` | everything | — | baseline |
+| `toml` | config | — | small |
+| `thiserror` | lib errors | snafu | zero (macro) |
+| `anyhow` | bin | — | small |
+| `schemars` (draft-07) | tool schemas | hand-written schemas (error-prone) | medium, compile-time |
+| `rmcp` (client, minimal transport features) | MCP | hand-written client | medium; risk of a reqwest version conflict — quarantine |
+| `reqwest` (rustls-tls, json, stream; default-features=false) | HTTP/SSE | ureq (no async streaming), hyper directly (a lot of manual work) | large; rustls instead of openssl — cross-compilation without system libs |
+| `ratatui` + `crossterm` | TUI | cursive, hand-written | medium |
+| `ignore` + `globset` | walk/glob (the ripgrep engine as a lib) | subprocess rg (absent on old machines, +a binary), walkdir (does not respect gitignore) | small |
+| `grep-searcher` + `grep-regex` | grep tool | subprocess rg | medium |
+| `tokio-util` | CancellationToken | — | small |
+| `parking_lot` | sync locks outside .await | std Mutex | small |
+| `indexmap` | tool registry | — | small |
+| `tracing` + `tracing-subscriber` (fmt, env-filter) | logs to a file | log | medium; in release — file logger only |
+| `dirs` | ~/.makedo | hand-written | small |
+| BM25 | **hand-written module** (~150 lines in makedo-types) | tantivy (mmap indexes, huge compile time — for a corpus of a few hundred documents that is a sledgehammer to crack a nut), the `bm25` crate (an extra dep for one formula) | zero |
+| frontmatter/wikilinks | hand-written parser | combinators (nom/winnow) — the grammar is trivial | zero |
 
-Не берём в M0: `notify` (file-watching wiki — YAGNI, generation по mtime при обращении), tree-sitter (см. 3.1), `criterion`, OpenTelemetry.
+Not taken in M0: `notify` (file-watching the wiki — YAGNI, generation by mtime on access), tree-sitter (see 3.1), `criterion`, OpenTelemetry.
 
-Гейт: `cargo deny` + `cargo bloat` отчёт в CI; каждый новый dep — строка в DEPS.md.
+Gate: a `cargo deny` + `cargo bloat` report in CI; every new dep is a row in DEPS.md.
 
 ---
 
-## 5. Сборка и релизы
+## 5. Build and releases
 
-**Профили:**
+**Profiles:**
 
 ```toml
-[profile.release]          # локальная проверка
+[profile.release]          # local checks
 opt-level = 3
 lto = "thin"
 
-[profile.dist]             # релизные бинарники
+[profile.dist]             # release binaries
 inherits = "release"
 lto = "fat"
 codegen-units = 1
@@ -323,72 +323,72 @@ panic = "abort"
 strip = "symbols"
 ```
 
-**[открытый вопрос]** `opt-level = 3` vs `"s"`: старые CPU с маленьким кэшем иногда быстрее на компактном коде. Решение — только по bench harness (стартап + wiki-seed + BM25), не по вкусу.
+**[open question]** `opt-level = 3` vs `"s"`: old CPUs with a small cache are sometimes faster on compact code. The decision is made only from the bench harness (startup + wiki seed + BM25), not by taste.
 
-**Матрица таргетов:**
+**Target matrix:**
 
-| Таргет | Аудитория | Примечание |
+| Target | Audience | Note |
 |---|---|---|
-| `x86_64-unknown-linux-gnu` | Linux-ноутбуки | glibc-baseline старая (сборка на старом образе / zig cc) |
-| `x86_64-unknown-linux-musl` | старые/нестандартные дистрибутивы | полностью статический — главный бинарь для «старых устройств» |
-| `x86_64-apple-darwin` | Mac Intel | `MACOSX_DEPLOYMENT_TARGET` = минимально разумный **[открытый вопрос: 10.15 или 11.0]** |
+| `x86_64-unknown-linux-gnu` | Linux laptops | old glibc baseline (built on an old image / zig cc) |
+| `x86_64-unknown-linux-musl` | old/non-standard distributions | fully static — the main binary for "old devices" |
+| `x86_64-apple-darwin` | Mac Intel | `MACOSX_DEPLOYMENT_TARGET` = the lowest reasonable value **[open question: 10.15 or 11.0]** |
 | `aarch64-apple-darwin` | M1/8GB | deployment target 11.0 |
 
-Без `target-cpu` надстроек: дефолтный baseline x86-64 уже не требует AVX2. **[открытый вопрос]** x86-64-v2 (SSE4.2, ~2009+) — допустимо и даёт немного скорости; замерить.
+No `target-cpu` tweaks: the default x86-64 baseline already does not require AVX2. **[open question]** x86-64-v2 (SSE4.2, ~2009+) is acceptable and gives a little speed; measure it.
 
-**CI (GitHub Actions):** fmt + clippy `-D warnings` + tests + `cargo deny` на каждый PR; матрица сборки + гейты бюджетов (размер бинаря, hyperfine-стартап на linux-раннере) на тег. Релиз: бинарники + checksums; установка — `curl | sh`-скрипт и прямые ссылки. Никаких npm/brew в M0.
+**CI (GitHub Actions):** fmt + clippy `-D warnings` + tests + `cargo deny` on every PR; the build matrix + budget gates (binary size, hyperfine startup on a linux runner) on a tag. Release: binaries + checksums; installation via a `curl | sh` script and direct links. No npm/brew in M0.
 
 ---
 
 ## 6. Roadmap
 
-**M0 — «ходячий скелет»** (агент, которым можно чинить его самого):
-workspace + lints + CI; config (global→project merge); providers (Anthropic + OpenAI-compat, стриминг, отмена); tool runtime (read/write/edit/bash/grep/glob/todo, semaphore, per-path локи, CancellationToken, трункация+спилл); session loop (актор, стриминг, permissions ask/allow/deny + doom-loop); TUI (рендер, ввод, спиннеры, тема).
-*Exit:* dogfood — makedo самостоятельно выполняет реальную задачу в собственном репо на референс-машине; бюджеты старта/RSS в зелёной зоне; отмена турна убивает все child-процессы (тест).
+**M0 — "walking skeleton"** (an agent that can be used to fix itself):
+workspace + lints + CI; config (global→project merge); providers (Anthropic + OpenAI-compat, streaming, cancellation); tool runtime (read/write/edit/bash/grep/glob/todo, semaphore, per-path locks, CancellationToken, truncation+spill); session loop (actor, streaming, permissions ask/allow/deny + doom-loop); TUI (rendering, input, spinners, theme).
+*Exit:* dogfood — makedo completes a real task on its own in its own repo on the reference machine; the startup/RSS budgets are in the green; cancelling a turn kills all child processes (test).
 
 **M1 — LLM Wiki + worktrees:**
-парсер vault, граф, BM25-модуль, wiki_search/wiki_node/wiki_trace, init flow с git-enforcement, `makedo wiki check`, спиннер-прогресс индексации, промпт-дисциплина обогащения; компакция (prune + truncate); worktree-режим (§3.7): `--worktree`/`finish`, `.makedo/.gitignore`, merge по явному запросу.
-*Exit:* первый запуск в чужом репо на 10k файлов: init < бюджета, wiki в git, поисковые задачи решаются через wiki быстрее, чем grep-ом (замер: число тул-коллов до ответа на 10 эталонных вопросов о кодовой базе).
+vault parser, graph, BM25 module, wiki_search/wiki_node/wiki_trace, init flow with git enforcement, `makedo wiki check`, spinner progress for indexing, prompt discipline for enrichment; compaction (prune + truncate); worktree mode (§3.7): `--worktree`/`finish`, `.makedo/.gitignore`, merge on explicit request.
+*Exit:* a first run in someone else's 10k-file repo: init < budget, the wiki is in git, search tasks are solved faster through the wiki than with grep (measured as the number of tool calls before an answer on 10 benchmark questions about the codebase).
 
 **M2 — MCP:**
-rmcp-клиент, stdio+HTTP, стейт-машина handshake, resilient-фрейминг с потолком строки, рестарт-backoff, коалесинг нотификаций, search_tool/use_tool с кэшированным BM25, статусы в TUI, импорт `.mcp.json` (совместимость с экосистемой Claude Code) + `${VAR}`-экспансия.
-*Exit:* 3 реальных сервера (github, файловый, один remote HTTP) переживают: kill -9 сервера (авторестарт), мусор в stdout (соединение живо), 100 list_changed-нотификаций (1 событие), гигантская строка (разрыв без OOM).
+rmcp client, stdio+HTTP, handshake state machine, resilient framing with a line ceiling, restart backoff, notification coalescing, search_tool/use_tool with cached BM25, statuses in the TUI, `.mcp.json` import (compatibility with the Claude Code ecosystem) + `${VAR}` expansion.
+*Exit:* 3 real servers (github, a filesystem one, one remote HTTP) survive: kill -9 of the server (auto-restart), garbage in stdout (the connection stays alive), 100 list_changed notifications (1 event), a giant line (disconnect without OOM).
 
 **M3 — Skills + polish:**
-SKILL.md-лоадер, embedded ponytail, skill-тул; OAuth-инфраструктура (PKCE, localhost-callback, device flow, refresh) — используется дважды: MCP OAuth (PKCE+DCR, двухслойный дедуп) и провайдер openai-chatgpt (ChatGPT-подписка через Codex-бэкенд, §3.8); `makedo doctor`; ASCII-fallback спиннеров.
-*Exit:* ponytail активен из коробки и отключается конфигом; OAuth-сервер (Linear) проходит цикл auth→refresh→re-auth.
+SKILL.md loader, embedded ponytail, skill tool; OAuth infrastructure (PKCE, localhost callback, device flow, refresh) — used twice: MCP OAuth (PKCE+DCR, two-layer dedup) and the openai-chatgpt provider (a ChatGPT subscription through the Codex backend, §3.8); `makedo doctor`; ASCII fallback for spinners.
+*Exit:* ponytail is active out of the box and can be turned off in the config; an OAuth server (Linear) passes the auth→refresh→re-auth cycle.
 
-**M3.5 — Providers × Prompt Caching (отдельный этап, критичен для стоимости):**
-Цель: пользователь НИКОГДА не вылетает из prompt-кэша по нашей вине — некэшированные input-токены дороже в 4–10×.
+**M3.5 — Providers × Prompt Caching (a separate stage, critical for cost):**
+Goal: the user NEVER falls out of the prompt cache because of us — uncached input tokens cost 4–10× more.
 
-*Провайдеры:* покрыть все провайдеры opencode. Каталог (models.dev, 191 провайдер) уже embedded; работа — диалекты API: (a) anthropic Messages, (b) openai-compat — уже есть; добавить (c) Google Gemini generateContent, (d) AWS Bedrock (sigv4), (e) Azure OpenAI (api-key/deployment-роутинг), (f) GitHub Copilot, (g) openai-chatgpt (Codex, §3.9). Выбор диалекта — по `api`-полю каталога + override в конфиге.
+*Providers:* cover all opencode providers. The catalog (models.dev, 191 providers) is already embedded; the work is the API dialects: (a) anthropic Messages, (b) openai-compat — already there; add (c) Google Gemini generateContent, (d) AWS Bedrock (sigv4), (e) Azure OpenAI (api-key/deployment routing), (f) GitHub Copilot, (g) openai-chatgpt (Codex, §3.9). The dialect is chosen by the catalog's `api` field + an override in the config.
 
-*Prompt caching — инварианты корректности:*
-1. **Стабильный префикс байт-в-байт**: system prompt, манифест тулов (уже алфавитный), сериализация сообщений — детерминированы; никакой волатильной информации (время, счётчики) в префиксе.
-2. **Компакция не рвёт кэш**: текущий prune мутирует старые сообщения — это инвалидация префикса и удар по деньгам. Решение: prune только СИНХРОННО с summarize-компакцией (один разрыв кэша вместо постоянных) либо отслеживание cache-breakpoint и мутация только за его пределами. [открытый вопрос — спроектировать в этом этапе]
-3. **Anthropic**: явные `cache_control` breakpoints — tools, system, хвост истории (до 4 точек); обновление breakpoint'а каждый турн.
-4. **OpenAI-compat**: автоматический кэш требует стабильного префикса ≥1024 токенов — гарантируется п.1; `prompt_cache_key`/user-параметр где поддержан.
-5. **Метрики**: `Usage` расширяется `cache_read/cache_write`; TUI показывает cache-hit-rate турна; bench-сценарий в `benchmarks/`: 20-турновая сессия, гейт «≥90% input-токенов из кэша со 2-го турна».
-*Exit:* на Anthropic и DeepSeek 20-турновый сценарий держит cache-hit ≥90%; смена модели/провайдера не требует правок session-кода (только диалект).
+*Prompt caching — correctness invariants:*
+1. **A byte-for-byte stable prefix**: the system prompt, the tool manifest (already alphabetical) and message serialization are deterministic; no volatile information (time, counters) in the prefix.
+2. **Compaction does not break the cache**: the current prune mutates old messages — that invalidates the prefix and costs money. Solution: prune only IN SYNC with summarize compaction (one cache break instead of constant ones), or track the cache breakpoint and mutate only beyond it. [open question — to be designed in this stage]
+3. **Anthropic**: explicit `cache_control` breakpoints — tools, system, the tail of the history (up to 4 points); the breakpoint is updated every turn.
+4. **OpenAI-compat**: the automatic cache needs a stable prefix of ≥1024 tokens — item 1 guarantees it; `prompt_cache_key`/the user parameter where supported.
+5. **Metrics**: `Usage` is extended with `cache_read/cache_write`; the TUI shows the turn's cache-hit-rate; a bench scenario in `benchmarks/`: a 20-turn session, gate "≥90% of input tokens from the cache starting with turn 2".
+*Exit:* on Anthropic and DeepSeek the 20-turn scenario holds cache-hit ≥90%; changing the model/provider needs no changes to session code (only the dialect).
 
-**M4 — Релиз 0.1:**
-матрица бинарей, install-скрипт, bench harness как CI-гейт, DEPS.md/NOTICE полные, доки.
-*Exit:* все бюджеты §1.2 — CI-гейты; установка на чистую старую машину (Ubuntu 18.04-класс, macOS Intel) одной командой.
+**M4 — Release 0.1:**
+binary matrix, install script, bench harness as a CI gate, complete DEPS.md/NOTICE, docs.
+*Exit:* all §1.2 budgets are CI gates; installation on a clean old machine (Ubuntu 18.04 class, macOS Intel) with one command.
 
-**Сознательно отложено (YAGNI, с точкой возврата):** subagents/task (вернёмся при упоре в контекст), summarize-компакция (при реальных переполнениях), OS-sandbox Landlock/Seatbelt (при запросе на untrusted-код), LSP-тул, websearch, code mode, MCP resources/prompts, hooks-система, HTTP-сервер/headless-режим, tree-sitter-разбор bash, BPE-токенайзер, file-watching wiki.
-
----
-
-## 7. Метрики успеха и как мерим
-
-Бюджеты §1.2 = контракт. Инструментарий:
-
-- **Стартап:** `hyperfine 'makedo --version'` и `makedo --bench-startup` (до первого кадра, self-timed) — CI-гейт на linux-раннере, ручной прогон на референс-Mac.
-- **RSS:** Linux — `/proc/self/smaps_rollup` self-report по команде `makedo doctor --mem`; macOS — `/usr/bin/time -l`. Снимается в 3 точках: после старта, после init wiki, после 20-турновой сессии (скриптованный сценарий в makedo-bench).
-- **Функциональная метрика wiki:** «стоимость ответа» — число тул-коллов и wall-time на эталонных 10 вопросах о кодовой базе, wiki vs grep-only; цель ≥ 2× меньше коллов.
-- **Размер:** `cargo bloat` топ-20 в CI-артефактах; бинарь < 15 MB — гейт.
-- Регрессия любого гейта — красный CI, обоснованное повышение бюджета — отдельный PR с одним изменением.
+**Deliberately deferred (YAGNI, with a return point):** subagents/task (we come back when we hit context limits), summarize compaction (on real overflows), OS sandbox Landlock/Seatbelt (when there is demand for untrusted code), LSP tool, websearch, code mode, MCP resources/prompts, hooks system, HTTP server/headless mode, tree-sitter bash parsing, BPE tokenizer, file-watching the wiki.
 
 ---
 
-*Документ — живой: решения меняются только через PR с обновлением соответствующей секции и пометкой, какой замер/инцидент это мотивировал.*
+## 7. Success metrics and how we measure them
+
+The §1.2 budgets = the contract. Tooling:
+
+- **Startup:** `hyperfine 'makedo --version'` and `makedo --bench-startup` (to the first frame, self-timed) — a CI gate on a linux runner, a manual run on the reference Mac.
+- **RSS:** Linux — a `/proc/self/smaps_rollup` self-report via the `makedo doctor --mem` command; macOS — `/usr/bin/time -l`. It is taken at 3 points: after startup, after wiki init, after a 20-turn session (a scripted scenario in makedo-bench).
+- **Functional wiki metric:** "cost of an answer" — the number of tool calls and the wall time on 10 benchmark questions about the codebase, wiki vs grep-only; the goal is ≥ 2× fewer calls.
+- **Size:** the `cargo bloat` top 20 in CI artifacts; binary < 15 MB is a gate.
+- A regression of any gate means a red CI; a justified budget increase is a separate PR with a single change.
+
+---
+
+*This is a living document: decisions change only through a PR that updates the relevant section and notes which measurement or incident motivated the change.*

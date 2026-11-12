@@ -2,15 +2,15 @@
 
 ## cli-loaders / unicode-animations (MIT)
 
-Кадры braille-спиннеров в `crates/makedo-tui/src/loaders.rs` сгенерированы из
-npm-пакета `unicode-animations` (https://github.com/gunnargray-dev/unicode-animations),
-используемого проектом cli-loaders (https://github.com/agilek/cli-loaders).
+The braille spinner frames in `crates/makedo-tui/src/loaders.rs` are generated from
+the npm package `unicode-animations` (https://github.com/gunnargray-dev/unicode-animations),
+which the cli-loaders project uses (https://github.com/agilek/cli-loaders).
 License: MIT.
 
 ## ponytail (MIT)
 
-Скилл ponytail © 2026 DietrichGebert (https://github.com/DietrichGebert/ponytail)
-встроен в бинарь как `crates/makedo-skills/embedded/ponytail/SKILL.md`. License: MIT.
+The ponytail skill © 2026 DietrichGebert (https://github.com/DietrichGebert/ponytail)
+is embedded in the binary as `crates/makedo-skills/embedded/ponytail/SKILL.md`. License: MIT.
 
 ## Open Code Review skills (Apache-2.0)
 

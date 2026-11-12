@@ -1,123 +1,123 @@
-# План: режимы reasoning подключённой модели
+# Plan: reasoning modes of the connected model
 
-Дата: 2026-10-08. Статус: частично реализовано. `/effort` выбирает и сохраняет уровень для
-модели и endpoint, передаёт `reasoning_effort` в OpenAI-compatible запросы.
-Поток reasoning и его история остаются в плане.
+Date: 2026-10-08. Status: partly implemented. `/effort` selects a level, saves it for the
+model and endpoint, and passes `reasoning_effort` in OpenAI-compatible requests.
+The reasoning stream and its history are still to be done.
 
-## Цель
+## Goal
 
-В makedo пользователь выбирает только те режимы рассуждения, которые поддерживает
-конкретная модель на конкретном endpoint. Выбранное значение применяется со
-следующего запроса и отображается в TUI. Для Swift 1.5 / Qwen3.8-27B это
-`low`, `medium`, `xhigh`; начальное значение — `low`. Значение `high` не является
-синонимом `xhigh` и для этой модели недопустимо.
+In makedo the user chooses only from the reasoning modes that the specific model
+supports on the specific endpoint. The chosen value applies from the next
+request and is shown in the TUI. For Swift 1.5 / Qwen3.8-27B the modes are
+`low`, `medium`, `xhigh`; the initial value is `low`. The value `high` is not
+a synonym for `xhigh` and is not valid for this model.
 
-Отключение thinking — отдельная возможность модели, а не дополнительный уровень:
-для Qwen оно передаётся как `chat_template_kwargs.enable_thinking=false`.
-Скрытие reasoning в интерфейсе не должно отключать его генерацию.
+Turning thinking off is a separate model capability, not an extra level:
+for Qwen it is passed as `chat_template_kwargs.enable_thinking=false`.
+Hiding reasoning in the interface must not turn off its generation.
 
-## Исходное состояние до реализации
+## State before implementation
 
-- `crates/makedo-config/src/lib.rs`: `ProviderConfig` хранит kind, model, base_url,
-  api_key_env; настройки reasoning отсутствуют.
-- `crates/makedo-providers/src/catalog.rs`: `ModelInfo` содержит лимиты, цены и tools,
-  но не содержит поддерживаемых режимов или способа их передачи.
-- `crates/makedo-providers/src/lib.rs`: `CompletionRequest`, `AssistantPart` и
-  `LlmEvent` не представляют reasoning.
-- `crates/makedo-providers/src/openai.rs`: запрос не передаёт reasoning; поток
-  обрабатывает content и tool_calls, но пропускает reasoning/reasoning_content.
-- `crates/makedo-session/src/lib.rs`: `turn` собирает запрос; `switch_model`
-  создаёт ProviderConfig с `base_url=None` и `api_key_env=None`. При переключении
-  custom-модели так можно потерять адрес Vast и источник токена.
-- `crates/makedo-tui/src/{commands,app,lib}.rs`: есть выбор моделей, нет выбора
-  режимов. `src/main.rs` собирает SessionConfig при старте.
+- `crates/makedo-config/src/lib.rs`: `ProviderConfig` stores kind, model, base_url,
+  api_key_env; there are no reasoning settings.
+- `crates/makedo-providers/src/catalog.rs`: `ModelInfo` holds limits, prices and tools,
+  but not the supported modes or the way to pass them.
+- `crates/makedo-providers/src/lib.rs`: `CompletionRequest`, `AssistantPart` and
+  `LlmEvent` do not represent reasoning.
+- `crates/makedo-providers/src/openai.rs`: the request does not pass reasoning; the stream
+  handles content and tool_calls but skips reasoning/reasoning_content.
+- `crates/makedo-session/src/lib.rs`: `turn` builds the request; `switch_model`
+  creates a ProviderConfig with `base_url=None` and `api_key_env=None`. Switching
+  a custom model this way can lose the Vast address and the token source.
+- `crates/makedo-tui/src/{commands,app,lib}.rs`: there is a model picker but no
+  mode picker. `src/main.rs` builds SessionConfig at startup.
 
-## 1. Возможности модели и конфиг
+## 1. Model capabilities and config
 
-Добавить небольшой профиль reasoning, привязанный к provider + endpoint + model:
+Add a small reasoning profile tied to provider + endpoint + model:
 
-- список точных строковых идентификаторов режимов;
-- default и текущий выбранный режим;
-- способ передачи: для текущего vLLM — `reasoning_effort` в корне запроса;
-- поддержка отключения thinking и соответствующий параметр;
-- поддержка сохранения reasoning в истории, если этого требует модель.
+- a list of the exact string identifiers of the modes;
+- the default and the currently selected mode;
+- how the value is passed: for the current vLLM, `reasoning_effort` at the root of the request;
+- whether thinking can be turned off, and the parameter that does it;
+- whether reasoning is kept in the history, if the model requires it.
 
-Источник профиля: явный конфиг пользователя > проверенный профиль конкретной
-модели/endpoint > доступные достоверные метаданные провайдера. `GET /v1/models`
-vLLM обычно не перечисляет reasoning-режимы: не пытаться угадывать их из имени
-модели или общего OpenAI-совместимого API. Если профиль неизвестен, не показывать
-вымышленный список и не отправлять reasoning-параметр до настройки.
+Profile source: explicit user config > a verified profile for the specific
+model/endpoint > trustworthy provider metadata, where available. The vLLM
+`GET /v1/models` endpoint usually does not list reasoning modes: do not try to guess
+them from the model name or from the generic OpenAI-compatible API. If the profile is
+unknown, do not show a made-up list and do not send a reasoning parameter until it is configured.
 
-Для Vast добавить явный профиль Swift с `low / medium / xhigh`, default `low`.
-Токен брать из env/хранилища credentials, не включать в план, git или логи.
+For Vast, add an explicit Swift profile with `low / medium / xhigh`, default `low`.
+Take the token from env or the credentials store; do not put it in the plan, git or logs.
 
-## 2. Сквозная передача и проверка
+## 2. End-to-end passing and validation
 
-Протянуть выбранный режим через Config → SessionConfig → CompletionRequest →
-OpenAiCompat::body. Валидировать его по профилю перед сетевым запросом.
-Для текущего vLLM использовать один источник значения — `reasoning_effort`;
-не оставлять конфликтующий `reasoning_effort` в `chat_template_kwargs`.
+Thread the selected mode through Config → SessionConfig → CompletionRequest →
+OpenAiCompat::body. Validate it against the profile before the network request.
+For the current vLLM use a single source for the value, `reasoning_effort`;
+do not leave a conflicting `reasoning_effort` in `chat_template_kwargs`.
 
-При смене модели сохранять выбор только если новый профиль его поддерживает;
-иначе применять default нового профиля и показывать уведомление. Сохранять
-base_url и api_key_env выбранного custom-провайдера. Смена режима действует
-на следующие запросы; уже идущую генерацию не перезапускать автоматически.
-Повторный запрос после ошибки использует тот же проверенный режим.
+When the model changes, keep the selection only if the new profile supports it;
+otherwise apply the new profile's default and show a notice. Keep the
+base_url and api_key_env of the selected custom provider. A mode change applies
+to the following requests; do not automatically restart a generation that is already running.
+A retry after an error uses the same validated mode.
 
-Не подставлять Qwen-параметры в Anthropic/Gemini/CLI-делегаты. Их профили и
-адаптеры добавляются по реально поддерживаемому API; общая схема не задаёт
-универсальное перечисление low/medium/high для всех моделей.
+Do not put Qwen parameters into the Anthropic/Gemini/CLI delegates. Their profiles and
+adapters are added according to the API each one actually supports; the shared schema
+does not define a universal low/medium/high enumeration for all models.
 
-## 3. Интерфейс и история
+## 3. Interface and history
 
-- Реализовано `/effort`: пикер строится из профиля текущей модели;
-  `/effort <level>` задаёт уровень напрямую.
-- Показать текущий режим рядом с названием модели; Qwen отображает `xhigh`.
-- Запомнить выбор для конкретного endpoint/model, включая восстановление сессии.
-- Добавить событие ReasoningDelta и отдельный блок reasoning в истории/TUI.
-- При продолжении диалога передавать reasoning в поле, ожидаемом API модели,
-  включая сообщения с tool_calls; не смешивать его с финальным content.
-- Сохранить совместимость старых сессий: отсутствие reasoning допустимо.
-- Показывать reasoning-токены отдельно только если сервер сообщает их достоверно;
-  длину текста в символах не выдавать за число токенов.
+- `/effort` is implemented: the picker is built from the current model's profile;
+  `/effort <level>` sets the level directly.
+- Show the current mode next to the model name; Qwen shows `xhigh`.
+- Remember the selection for the specific endpoint/model, including across session restore.
+- Add a ReasoningDelta event and a separate reasoning block in the history/TUI.
+- When the conversation continues, pass reasoning in the field that the model's API
+  expects, including in messages with tool_calls; do not mix it with the final content.
+- Keep old sessions compatible: missing reasoning is allowed.
+- Show reasoning tokens separately only if the server reports them reliably;
+  do not present the text length in characters as a token count.
 
-## 4. Проверки при реализации
+## 4. Checks during implementation
 
-1. Конфиг и пикер Qwen содержат ровно `low`, `medium`, `xhigh`; `high`
-   отклоняется локально с перечислением допустимых значений.
-2. Локальный HTTP-приёмник фиксирует выбранное значение в JSON для каждого
-   режима. Проверить реальный исходящий запрос, а не только состояние TUI.
-3. Смена модели не переносит неподдерживаемый режим и не теряет custom endpoint.
-4. Поток reasoning, ответ, tool_call и следующий ход корректно сохраняются
-   и восстанавливаются из истории. Старые сессии продолжают читаться.
-5. На Vast все три допустимых режима принимаются сервером; короткая задача
-   по коду и вызов инструмента завершаются. Число thinking-токенов одного
-   ответа не использовать как доказательство эффективности режима.
+1. The Qwen config and picker contain exactly `low`, `medium`, `xhigh`; `high`
+   is rejected locally with a list of the allowed values.
+2. A local HTTP listener records the selected value in the JSON for each
+   mode. Check the real outgoing request, not only the TUI state.
+3. Changing the model does not carry over an unsupported mode and does not lose the custom endpoint.
+4. The reasoning stream, the answer, the tool_call and the next turn are saved
+   correctly and restored from the history. Old sessions can still be read.
+5. On Vast the server accepts all three allowed modes; a short coding
+   task and a tool call both complete. Do not use the thinking-token count of
+   a single answer as proof that a mode is effective.
 
-## Порядок внедрения
+## Rollout order
 
-1. Профиль Swift + конфиг + сериализация запроса + локальная проверка параметра.
-2. TUI-пикер и сохранение выбора при переключениях/восстановлении сессии.
-3. Поток и история reasoning, затем короткая проверка с реальным Swift API.
-4. Профили других подключаемых моделей по их документации.
+1. Swift profile + config + request serialization + local check of the parameter.
+2. TUI picker and keeping the selection across model switches and session restore.
+3. Reasoning stream and history, then a short check against the real Swift API.
+4. Profiles for the other models that can be connected, based on their documentation.
 
-Критерий готовности: выбор `xhigh` в makedo доходит до Swift как `xhigh`, выбор
-`high` невозможен для этой модели, а пользователь видит фактически применяемый
-режим. Управление инстансом и удаление его диска после 17:00 9 октября остаются
-за `qwen_vast.py`, отдельно от пользовательских сессий makedo.
+Definition of done: selecting `xhigh` in makedo reaches Swift as `xhigh`, selecting
+`high` is impossible for this model, and the user sees the mode that is actually
+applied. Managing the instance and deleting its disk after 17:00 on October 9 remain
+the job of `qwen_vast.py`, separate from makedo user sessions.
 
-## Источники
+## Sources
 
 - [Swift 1.5](https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-27b)
-- [Выбранная uncensored-модель](https://huggingface.co/ajgazin/Swift-1.5-Qwen3.8-27B-Uncensored-MTP)
-- [Шаблон Qwen3.8](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated/raw/main/chat_template.jinja)
-- [Схема вариантов OpenCode 2.0.20](https://github.com/anomalyco/opencode/blob/v2.0.20/packages/schema/src/config/provider.ts)
+- [The selected uncensored model](https://huggingface.co/ajgazin/Swift-1.5-Qwen3.8-27B-Uncensored-MTP)
+- [Qwen3.8 template](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated/raw/main/chat_template.jinja)
+- [OpenCode 2.0.20 variants schema](https://github.com/anomalyco/opencode/blob/v2.0.20/packages/schema/src/config/provider.ts)
 
-Проверка установленного OpenCode 2.0.20 локальным HTTP-приёмником подтвердила:
-`#low` отправляет `reasoning_effort=low`, `#high` — `reasoning_effort=high`.
-OpenCode поддерживает custom variants; проблема нашего исходного конфига —
-отсутствие точного списка режимов Qwen и дублирование значения в двух полях.
+A check of the installed OpenCode 2.0.20 with a local HTTP listener confirmed that
+`#low` sends `reasoning_effort=low` and `#high` sends `reasoning_effort=high`.
+OpenCode supports custom variants; the problem with our original config was that it
+had no exact list of Qwen modes and duplicated the value in two fields.
 
-Исправленный конфиг OpenCode проверен тем же приёмником: `low`, `medium`,
-`xhigh` каждый отправляются как одноимённый `reasoning_effort`, конфликтующего
-поля в `chat_template_kwargs` больше нет. Default установлен в `low`.
+The corrected OpenCode config was checked with the same listener: `low`, `medium` and
+`xhigh` are each sent as the `reasoning_effort` of the same name, and the conflicting
+field in `chat_template_kwargs` is gone. The default is set to `low`.

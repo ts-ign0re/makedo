@@ -1,86 +1,93 @@
-# Ядро продукта: дешёвые LLM + дисциплина + слой знаний
+# Product core: cheap LLMs + discipline + a knowledge layer
 
-Дата: 2026-08-21. Основание — измерения `benchmarks/betslip-ab/` (22 прогона),
-не гипотезы. Этот документ — центр тяжести продукта; PLAN.md остаётся
-техпланом харнеса.
+Date: 2026-08-21. Based on measurements from 22 benchmark runs (see
+[BENCHMARKS.md](BENCHMARKS.md)), not on hypotheses. This document is the centre
+of gravity of the product; PLAN.md remains the technical plan of the harness.
 
-## Тезис
+## Thesis
 
-Дешёвые модели (deepseek, qwen, локальные) проваливают реальные кодовые базы
-не от нехватки интеллекта, а от нехватки контекстной дисциплины: блуждают по
-репо, перечитывают, изобретают чужие конвенции. Три вещи закрывают разрыв для
-типовых задач при цене в ~1/30 от фронтир-модели:
+Cheap models (deepseek, qwen, local ones) fail on real codebases not for lack of
+intelligence but for lack of context discipline: they wander around the
+repository, re-read files and reinvent conventions that already exist. Three
+things close the gap for routine tasks at about 1/30 of the price of a frontier
+model:
 
-1. **Слой знаний** — LLM-wiki: версионируемый типизированный граф фактов о
-   проекте, наполняемый дешёвой моделью (~$0.15 на монорепу 350k LOC).
-2. **Дисциплина** — принудительный wiki-first (поиск перед grep), обязанность
-   обогащения (узнал → записал), ponytail (краткость), доктрина с горизонтами
-   рисков для дорогих решений.
-3. **Самопроверка** — агент обязан гонять typecheck/тесты до зелени; в замерах
-   это влияло на качество сильнее выбора модели.
+1. **A knowledge layer** — an LLM wiki: a versioned, typed graph of facts about
+   the project, filled in by a cheap model (~$0.15 for a 350k LOC monorepo).
+2. **Discipline** — enforced wiki-first (search before grep), a duty to enrich
+   (learned it → wrote it down), ponytail (brevity), and a doctrine with risk
+   horizons for expensive decisions.
+3. **Self-checking** — the agent must run type checks and tests until they are
+   green; in the measurements this affected quality more than the choice of model.
 
-Измерено: фича с тестами и самопроверкой на deepseek-v4-pro по прогретой wiki —
-$0.13 против $3.5–5.2 у sonnet при сопоставимом качестве; wiki режет полную
-стоимость прогона на 17–57% (input-сторона = ~80% денег).
+Measured: a feature with tests and self-checking on deepseek-v4-pro with a
+warmed-up wiki cost $0.13, against $3.5–5.2 on sonnet at comparable quality; the
+wiki cuts the full cost of a run by 17–57% (the input side is ~80% of the money).
 
-## Позиционирование
+## Positioning
 
-**«Серьёзная кодовая база на дешёвых моделях.»** Не «ещё один Claude Code»:
-в режиме обёртки над фронтир-CLI ценности почти нет (их субагенты/экосистема
-лучше и развиваются быстрее). Ниша makedo — то, что фронтир-CLI не могут по
-определению: они заперты на свои модели, а generic-агенты не имеют слоя знаний.
+**"Serious codebases on cheap models."** Not "one more Claude Code": as a wrapper
+around a frontier CLI it adds almost no value (their subagents and ecosystem are
+better and develop faster). The niche of makedo is what frontier CLIs cannot do by
+definition: they are locked to their own models, and generic agents have no
+knowledge layer.
 
-Кому: команды с большим репо и чувствительностью к цене; on-prem/compliance
-(ollama, локальные модели); соло-разработчики на подписочных лимитах.
+Who it is for: teams with a large repository and sensitivity to price;
+on-prem and compliance setups (ollama, local models); solo developers on
+subscription limits.
 
-## Ядро (беречь и развивать)
+## Core (protect and develop)
 
-- `makedo-wiki` — граф + тулы (`wiki_node`/`wiki_trace`; поиск по нодам — `memory_search`),
-  seed, схема typed edges. Это IP продукта.
-- Нативный agent loop (`makedo-session`) + API-провайдеры: anthropic-диалект,
-  openai-compat (deepseek/qwen/openrouter/ollama), gemini. Дешёвые модели
-  работают ИМЕННО здесь — с тулами makedo и его дисциплиной.
-- Скиллы: ponytail (embedded), доктрины ddd/hexagonal с risk horizons.
-- `task`-субагенты (research read-only / edit в worktree) + worktree-тулы:
-  контекстная гигиена и изоляция правок.
-- `makedo mcp-serve` — экспорт слоя знаний в ЧУЖИЕ агенты (claude/codex/grok/
-  любой MCP-клиент). Wiki переносима — это канал распространения, а не утечка.
-- Бенчмарк-харнес `benchmarks/` — продукт обязан мерить сам себя; каждое
-  изменение ядра проверяется на $/фичу и % брака.
+- `makedo-wiki` — the graph plus its tools (`wiki_node`/`wiki_trace`; node search
+  is `memory_search`), seeding, and the typed-edge schema. This is the product's IP.
+- The native agent loop (`makedo-session`) plus API providers: the anthropic
+  dialect, openai-compat (deepseek/qwen/openrouter/ollama), gemini. Cheap models
+  work HERE — with makedo's tools and its discipline.
+- Skills: ponytail (embedded), the ddd/hexagonal doctrines with risk horizons.
+- `task` subagents (read-only research / edits in a worktree) plus the worktree
+  tools: context hygiene and isolation of edits.
+- `makedo mcp-serve` — exports the knowledge layer to OTHER agents (claude/codex/
+  grok/any MCP client). The wiki is portable — that is a distribution channel, not
+  a leak.
+- The benchmark harness in `benchmarks/` — the product must measure itself; every
+  change to the core is checked for $/feature and % of defects.
 
-## Периферия (удобство, не смысловой центр)
+## Periphery (convenience, not the centre of meaning)
 
-- CLI-делегаты claude/codex/grok — оставить как мост для владельцев подписок,
-  не инвестировать сверх поддержки работоспособности.
-- TUI-полировка, темы. Бюджеты производительности старых машин — гигиена, не ниша.
+- The claude/codex/grok CLI delegates — keep as a bridge for subscription owners,
+  do not invest beyond keeping them working.
+- TUI polish, themes. Performance budgets for old machines are hygiene, not a niche.
 
-## Достроить (разрывы ядра, в порядке приоритета)
+## To build (gaps in the core, in priority order)
 
-1. **`makedo wiki enrich [область]`** — первоклассная команда: обогащение wiki
-   дешёвой моделью по области/диффу (сейчас — ручной промпт с `--yolo`).
-   Инкремент: после merge обогащать только затронутое.
-2. **Verification gate** — проектный конфиг «как проверить себя» (команды
-   typecheck/test/lint — нода wiki `type: verify`); нативный цикл обязан
-   прогнать их до зелени перед завершением турна с правками. Крупнейший
-   измеренный рычаг качества.
-3. **Маршрутизация моделей** — `[models] work / design / research` в конфиге:
-   типовая задача → дешёвая, дизайн-решение (доктрина сработала) → дорогая,
-   research-субагент → самая дешёвая. Точка врезки готова (task tool, ponytail-
-   комментарий про per-task провайдера).
-4. **План-фаза** — план дорогой моделью → исполнение дешёвой по плану.
-   Гипотеза с наибольшим потенциалом по цене; сначала замер бенчмарком.
-5. **Здоровье wiki** — `makedo wiki check` расширить: staleness (нода старше
-   правок её файлов), сироты, битые edges; отчёт в TUI.
+1. **`makedo wiki enrich [area]`** — a first-class command: enrich the wiki with a
+   cheap model by area or diff (today it is a manual prompt with `--yolo`).
+   Increment: after a merge, enrich only what was touched.
+2. **Verification gate** — a project config for "how to check yourself" (the
+   typecheck/test/lint commands — a wiki node of `type: verify`); the native loop
+   must run them until green before finishing a turn that made edits. The largest
+   measured quality lever.
+3. **Model routing** — `[models] work / design / research` in the config: a
+   routine task → a cheap model, a design decision (the doctrine fired) → an
+   expensive one, a research subagent → the cheapest. The insertion point is ready
+   (the task tool, the ponytail comment about a per-task provider).
+4. **Plan phase** — plan with an expensive model → execute the plan with a cheap
+   one. The hypothesis with the largest price potential; measure it with the
+   benchmark first.
+5. **Wiki health** — extend `makedo wiki check`: staleness (a node older than the
+   edits to its files), orphans, broken edges; a report in the TUI.
 
-## Метрики продукта (встроить, показывать пользователю)
+## Product metrics (build in, show to the user)
 
-- $/задача и токены по классам (уже есть usage+cost) — плюс агрегат за неделю.
-- Wiki hit rate: доля задач, начавшихся с успешного `memory_search` по wiki.
-- Escalation rate: % задач, ушедших с дешёвой модели на дорогую.
-- Брак: % турнов с правками, не прошедших verification gate.
+- $/task and tokens by class (usage+cost already exist) — plus a weekly aggregate.
+- Wiki hit rate: the share of tasks that started with a successful `memory_search`
+  over the wiki.
+- Escalation rate: % of tasks that moved from a cheap model to an expensive one.
+- Defects: % of turns with edits that did not pass the verification gate.
 
-## Что считаем успехом
+## What counts as success
 
-Команда ведёт реальный репозиторий месяц: ≥70% задач закрываются дешёвой
-моделью без эскалации, брак ≤ уровня фронтир-модели из бенчмарка, средняя цена
-задачи ≤ $0.5. Не выполняется — тезис ревизуется честно, как в отчётах.
+A team runs a real repository for a month: ≥70% of tasks are closed by a cheap
+model without escalation, defects are no higher than the frontier model's level
+from the benchmark, and the average price of a task is ≤ $0.5. If that does not
+hold, the thesis is revised honestly, as in the reports.
