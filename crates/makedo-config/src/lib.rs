@@ -84,13 +84,25 @@ impl Default for ProviderConfig {
     }
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct SkillsConfig {
     /// `"lite" | "full" | "ultra"` или `false`.
     pub ponytail: PonytailLevel,
     /// Доктрина проектирования: `"ddd" | "hexagonal"` или `false`/`"none"`.
     pub doctrine: Doctrine,
+    /// `triz` + `lean` всегда в системном промпте (по умолчанию `true`); `false` — только по запросу.
+    pub triz: bool,
+}
+
+impl Default for SkillsConfig {
+    fn default() -> Self {
+        Self {
+            ponytail: PonytailLevel::default(),
+            doctrine: Doctrine::default(),
+            triz: true,
+        }
+    }
 }
 
 /// Доктрина проектирования систем — встроенный набор правил (skill), который
@@ -391,6 +403,14 @@ mod tests {
 
     fn parse(s: &str) -> Layer {
         toml::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn triz_is_on_by_default_and_can_be_switched_off() {
+        assert!(Config::default().skills.triz);
+        let l = parse("[skills]\ntriz = false");
+        assert!(!l.skills.unwrap().triz);
+        assert!(parse("[skills]\nponytail = \"lite\"").skills.unwrap().triz);
     }
 
     #[test]

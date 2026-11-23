@@ -35,6 +35,7 @@ fn main() -> anyhow::Result<()> {
                 &std::env::current_dir()?,
                 makedo_config::PonytailLevel::Full,
                 makedo_config::Doctrine::None,
+                false,
             );
             if let Some(name) = args.get(1) {
                 let skill = skills
@@ -634,6 +635,7 @@ fn build_session_with(
         dir,
         cfg.skills.ponytail,
         cfg.skills.doctrine,
+        cfg.skills.triz,
     );
     let skills_prompt = makedo_skills::render(&skills);
     makedo_skills::tools::register(&mut registry, skills).context("skill tools")?;
@@ -680,6 +682,7 @@ fn build_session_with(
             base_system_prompt: base_prompt,
             ponytail: cfg.skills.ponytail,
             doctrine: cfg.skills.doctrine,
+            triz: cfg.skills.triz,
             global_dir: makedo_config::global_dir(),
             cwd: dir.to_owned(),
             spill_dir,

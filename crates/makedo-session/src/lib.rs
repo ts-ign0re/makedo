@@ -102,6 +102,8 @@ pub struct SessionConfig {
     /// Уровень ponytail (для пересборки промпта при смене доктрины).
     pub ponytail: makedo_config::PonytailLevel,
     pub doctrine: makedo_config::Doctrine,
+    /// `triz` + `lean` всегда активны (`[skills] triz`).
+    pub triz: bool,
     /// Глобальная директория makedo (для загрузки скиллов при пересборке).
     pub global_dir: Option<PathBuf>,
     /// Verification gate: shell-команды самопроверки (`sh -c`), гоняются после
@@ -957,6 +959,7 @@ impl Actor {
             &self.cfg.cwd,
             self.cfg.ponytail,
             doctrine,
+            self.cfg.triz,
         );
         self.cfg.system_prompt = format!(
             "{}{}",

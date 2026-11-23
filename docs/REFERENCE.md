@@ -130,10 +130,13 @@ binary for machine-wide slots. `heavy=false` opts a cheap command out;
 `HEAVY_*` and CI behavior belongs to Heavy. If Heavy is absent, the result says
 `heavy=unavailable`; MAKEDO's own per-batch concurrency limit still applies.
 
-Ponytail, Open Code Review, its delegate mode, Heavy and worktree guidance are embedded
-in the binary. `skill_search` finds a skill and `skill_load` loads its instructions
-on demand. Only Ponytail (full by default) and a selected doctrine are always
-included in the system prompt. Global Claude/Codex/plugin skill directories are
+Ponytail, Open Code Review, its delegate mode, Heavy, worktree guidance and TRIZ
+(the cheapest-change check: ideal result, cheapest knob, binding constraint, one
+`optimality:` line per change) are embedded in the binary. `skill_search` finds a skill and `skill_load` loads its instructions
+on demand. Only Ponytail (full by default), TRIZ with Lean and a selected
+doctrine are always included in the system prompt. `[skills] triz = false`
+moves TRIZ and Lean back to on-demand; Lean is the lean-manufacturing side (the
+eight wastes, go and see, stop the line, five whys) and TRIZ picks the change. Global Claude/Codex/plugin skill directories are
 not read at runtime. `.makedo/skills/<name>/SKILL.md` can add project skills or
 override a built-in; disabling Ponytail also disables a project override.
 `ocr` remains an external executable with its existing provider configuration.

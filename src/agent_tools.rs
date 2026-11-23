@@ -210,6 +210,7 @@ impl Tool for TaskTool {
                 &cwd,
                 makedo_config::PonytailLevel::Full,
                 makedo_config::Doctrine::None,
+                false,
             ),
         )
         .map_err(|e| ToolError::Failed(format!("child skill tools: {e}")))?;
@@ -226,6 +227,7 @@ impl Tool for TaskTool {
             base_system_prompt: ctx_a.system_prompt.clone(),
             ponytail: makedo_config::PonytailLevel::Off, // промпт уже собран родителем
             doctrine: makedo_config::Doctrine::None,
+            triz: false, // промпт уже собран родителем
             global_dir: makedo_config::global_dir(),
             cwd,
             spill_dir: ctx_a.spill_dir.clone(),

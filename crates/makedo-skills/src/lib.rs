@@ -83,6 +83,7 @@ pub fn load(
     project_root: &Path,
     ponytail: PonytailLevel,
     doctrine: Doctrine,
+    triz: bool,
 ) -> Vec<Skill> {
     use std::fmt::Write as _;
     let mut skills = BTreeMap::new();
@@ -107,6 +108,8 @@ pub fn load(
         include_str!("../embedded/open-code-review-delegate/SKILL.md"),
         include_str!("../embedded/heavy/SKILL.md"),
         include_str!("../embedded/worktrees/SKILL.md"),
+        include_str!("../embedded/triz/SKILL.md"),
+        include_str!("../embedded/lean/SKILL.md"),
     ] {
         if let Some(skill) = parse(md) {
             skills.insert(skill.name.clone(), skill);
@@ -130,6 +133,13 @@ pub fn load(
     {
         skill.active = true;
     }
+    if triz {
+        for name in ["triz", "lean"] {
+            if let Some(skill) = skills.get_mut(name) {
+                skill.active = true;
+            }
+        }
+    }
     skills.into_values().collect()
 }
 
@@ -149,7 +159,7 @@ pub fn render(skills: &[Skill]) -> String {
             s.body.trim()
         );
     }
-    out.push_str("\nOther embedded skills are available through skill_search(query) and skill_load(name). Search for relevant skills before specialized work; load a matching skill before applying it. For code review, load open-code-review (or open-code-review-delegate when the user requests review without an external LLM). Load heavy for machine-wide resource limits and worktrees before creating, editing or finishing a worktree. Skill references resolve relative to the source SKILL.md returned by skill_load. Do not load the entire catalog.\n");
+    out.push_str("\nOther embedded skills are available through skill_search(query) and skill_load(name). Search for relevant skills before specialized work; load a matching skill before applying it. For code review, load open-code-review (or open-code-review-delegate when the user requests review without an external LLM). Load heavy for machine-wide resource limits and worktrees before creating, editing or finishing a worktree. The triz and lean skills, when not already active above, are loaded the same way: load triz before any change that adds a file, entity, endpoint, dependency or abstraction, and finish with its one-line `optimality:` note. Skill references resolve relative to the source SKILL.md returned by skill_load. Do not load the entire catalog.\n");
     out
 }
 
@@ -165,6 +175,7 @@ mod tests {
             Path::new("/nonexistent"),
             PonytailLevel::Full,
             Doctrine::None,
+            false,
         );
         assert_eq!(skills.iter().filter(|s| s.active).count(), 1);
         let ponytail = skills.iter().find(|s| s.name == "ponytail").unwrap();
@@ -175,13 +186,50 @@ mod tests {
     }
 
     #[test]
+    fn triz_is_embedded_on_demand_and_hinted() {
+        let skills = load(
+            None,
+            Path::new("/nonexistent"),
+            PonytailLevel::Full,
+            Doctrine::None,
+            false,
+        );
+        let triz = skills.iter().find(|s| s.name == "triz").unwrap();
+        assert!(!triz.active && triz.body.contains("binding constraint"));
+        assert!(render(&skills).contains("load triz before any change"));
+    }
+
+    #[test]
+    fn triz_switch_activates_triz_and_lean() {
+        let on = load(
+            None,
+            Path::new("/nonexistent"),
+            PonytailLevel::Full,
+            Doctrine::None,
+            true,
+        );
+        let active: Vec<_> = on
+            .iter()
+            .filter(|s| s.active)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert_eq!(active, ["lean", "ponytail", "triz"]);
+        let rendered = render(&on);
+        assert!(
+            rendered.contains("<skill name=\"triz\">")
+                && rendered.contains("<skill name=\"lean\">")
+        );
+    }
+
+    #[test]
     fn off_disables_and_levels_annotate() {
         assert!(
             load(
                 None,
                 Path::new("/nonexistent"),
                 PonytailLevel::Off,
-                Doctrine::None
+                Doctrine::None,
+                false
             )
             .iter()
             .all(|s| !s.active)
@@ -191,6 +239,7 @@ mod tests {
             Path::new("/nonexistent"),
             PonytailLevel::Ultra,
             Doctrine::None,
+            false,
         );
         assert!(
             ultra
@@ -213,7 +262,7 @@ mod tests {
             "---\nname: ponytail\ndescription: custom\n---\ncustom body\n",
         )
         .unwrap();
-        let skills = load(None, &d, PonytailLevel::Full, Doctrine::None);
+        let skills = load(None, &d, PonytailLevel::Full, Doctrine::None, false);
         assert_eq!(skills.iter().filter(|s| s.active).count(), 1);
         assert!(
             skills
@@ -227,8 +276,8 @@ mod tests {
         let dir2 = d.join(".makedo/skills/deploy");
         std::fs::create_dir_all(&dir2).unwrap();
         std::fs::write(dir2.join("SKILL.md"), "---\nname: deploy\n---\nsteps\n").unwrap();
-        let skills = load(None, &d, PonytailLevel::Full, Doctrine::None);
-        assert_eq!(skills.len(), 6);
+        let skills = load(None, &d, PonytailLevel::Full, Doctrine::None, false);
+        assert_eq!(skills.len(), 8);
     }
 
     #[test]
@@ -239,6 +288,7 @@ mod tests {
             Path::new("/nonexistent"),
             PonytailLevel::Full,
             Doctrine::Ddd,
+            false,
         );
         let ddd = skills.iter().find(|s| s.name == "doctrine-ddd").unwrap();
         assert!(ddd.body.contains("adaptive") || ddd.body.contains("Adaptive"));
@@ -251,6 +301,7 @@ mod tests {
             Path::new("/nonexistent"),
             PonytailLevel::Full,
             Doctrine::None,
+            false,
         );
         assert!(only.iter().all(|s| s.name != "doctrine-ddd"));
         // hexagonal — про порты/адаптеры
@@ -259,6 +310,7 @@ mod tests {
             Path::new("/nonexistent"),
             PonytailLevel::Full,
             Doctrine::Hexagonal,
+            false,
         );
         assert!(hex.iter().any(|s| s.name == "doctrine-hexagonal"));
     }
@@ -285,6 +337,7 @@ mod portable_tests {
             &root.join("project"),
             PonytailLevel::Full,
             Doctrine::None,
+            false,
         );
         assert!(
             skills
